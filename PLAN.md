@@ -460,7 +460,7 @@ all pass.
 
 ---
 
-### Phase 6 — Pre-pilot hardening (3–5 days)
+### Phase 6 — Pre-pilot hardening (3–5 days) ✅
 
 - **CI** — `.github/workflows/ci.yml`:
   - Job 1: `pnpm install --frozen-lockfile`, `pnpm typecheck`,
@@ -484,6 +484,30 @@ all pass.
 - **Pilot deployment** — Docker image build (`apps/api/Dockerfile`,
   `apps/web/Dockerfile`), `docker-compose.prod.yml`, secrets handling
   via host's secret store (CLAUDE.md "Environment variables").
+
+**Status (2026-05-07):** code-complete. Two slices shipped this phase.
+**Ops + docs:** `.github/workflows/ci.yml` (three-job pipeline: fast
+lane / integration with ephemeral Postgres / e2e + a11y with the built
+app), `apps/api/Dockerfile` + `apps/web/Dockerfile` +
+`apps/web/nginx.conf.template` + `docker-compose.prod.yml`
+(host-secret-driven prod composition), `docs/perf-baseline.md`
+(PRF-01..10 measurement template), `docs/runbooks/backup-recovery.md`
+(RPO ≤ 24h procedure + DR drill), `docs/decisions/ADR-0006-threat-model.md`
+(STRIDE on magic-link, cert-signing key, iSIMS import + OWASP Top-10
+table), `docs/privacy-review.md` with extended logger redactions for
+organisation/opportunity contact PII and notification subject/body.
+**Tests:** integration harness at `apps/api/tests/integration/_setup.ts`
+(real-Postgres truncate-between-specs harness with `createUser`,
+`cookieFor`, `createOrganisation`, `createOpportunity`, `createPlacement`
+helpers); 13 module integration specs (auth, orgs, opportunities,
+applications, placements, evaluations, ledger, certificates,
+notifications, reports, imports, admin, uploads); 11 Playwright specs
+(student sign-in/apply/log-hours, supervisor onboarding/approve/
+final-eval, coordinator approve/dashboard/accreditation-pack, admin
+audit-log, public verify-certificate); Mailpit-driven email assertions
+via `tests/e2e/_helpers.ts`. CI workflow runs `pnpm db:seed:e2e` (new
+script `packages/shared/seed-e2e.ts`) to write `tests/e2e/.fixture.json`
+with deterministic credentials before Playwright starts.
 
 **Exit criteria:** CI green on a pinned commit; UAT scenarios
 (`tests/e2e/`) all green; performance baseline document checked in;

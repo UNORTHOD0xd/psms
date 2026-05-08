@@ -25,6 +25,7 @@
     "db:migrate": "pnpm --filter @psms/shared prisma migrate deploy",
     "db:migrate:create": "pnpm --filter @psms/shared prisma migrate dev --name",
     "db:seed": "pnpm --filter @psms/shared db:seed",
+    "db:seed:e2e": "pnpm --filter @psms/shared db:seed:e2e",
     "db:reset": "pnpm --filter @psms/shared prisma migrate reset --force",
     "db:generate": "pnpm --filter @psms/shared prisma generate",
     "types:generate": "openapi-typescript apps/api/openapi.yaml -o packages/shared/src/types.ts",

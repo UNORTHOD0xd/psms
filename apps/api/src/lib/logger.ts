@@ -31,6 +31,22 @@ export const logger = pino({
       '*.params',
       '*.raw_token',
       '*.token',
+      '*.session_token',
+      // Organisation contact PII (registry rows are about people too).
+      '*.primary_contact_name',
+      '*.primary_contact_email',
+      '*.primary_contact_phone',
+      // Opportunity / placement supervisor contact details.
+      '*.supervisor_name',
+      '*.supervisor_email',
+      // Certificate signing key — env-derived, but a careless log
+      // line that captures process.env shouldn't leak it.
+      '*.CERT_SIGNING_KEY',
+      '*.cert_signing_key',
+      // Notification body / subject can include any of the above
+      // interpolated; redact wholesale.
+      '*.subject',
+      '*.body',
     ],
     censor: '[REDACTED]',
   },

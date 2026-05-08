@@ -1,0 +1,250 @@
+# PSMS — continuous integration.
+#
+# Three required jobs gate every PR into main (PLAN.md § Phase 6):
+#   1. lint + typecheck + unit tests + OpenAPI RBAC sweep
+#   2. integration suite against an ephemeral Postgres
+#   3. e2e (Playwright) + a11y (axe-core) against the built app
+#
+# Branch protection on `main` requires all three. The split lets the
+# fast lane (job 1) fail in ~2 min and short-circuits the rest.
+#
+# Secrets used (configured in repo settings):
+#   - none for CI; everything is generated or test-only.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PNPM_VERSION: 9.12.0
+  NODE_VERSION: 22
+
+jobs:
+  fast-lane:
+    name: Lint, typecheck, unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate API types from OpenAPI
+        run: |
+          pnpm types:generate
+          pnpm api:client
+
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm check:openapi-rbac
+      - run: pnpm test:unit
+
+  integration:
+    name: Integration (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: fast-lane
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: psms
+          POSTGRES_PASSWORD: psms
+          POSTGRES_DB: psms_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U psms -d psms_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://psms:psms@localhost:5432/psms_test?schema=public
+      NODE_ENV: test
+      SESSION_SECRET: ci-session-secret-padding-padding-padding-padding-padding
+      PUBLIC_WEB_ORIGIN: http://localhost:5173
+      EMAIL_FROM_ADDRESS: no-reply@ci.psms.local
+      EMAIL_FROM_NAME: PSMS CI
+      SMTP_HOST: localhost
+      SMTP_PORT: 1025
+      S3_ENDPOINT: local
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: ci
+      S3_SECRET_ACCESS_KEY: ci
+      S3_BUCKET: psms-ci
+      S3_FORCE_PATH_STYLE: 'true'
+      ISIMS_CSV_PATH: /tmp/psms-isims-ci
+      ISIMS_IMPORT_CRON: 0 2 * * *
+      MAGIC_LINK_TTL_HOURS: 24
+      MAGIC_LINK_MAX_ACTIVE_PER_SUPERVISOR: 3
+      RATE_LIMIT_SIGNIN_PER_IP_PER_5MIN: 5
+      RATE_LIMIT_MAGICLINK_ISSUE_PER_HOUR: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm types:generate
+
+      - name: Generate Ed25519 cert keys (test)
+        run: |
+          node -e "
+            const c = require('node:crypto');
+            const { privateKey, publicKey } = c.generateKeyPairSync('ed25519');
+            const priv = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+            const pub = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+            require('node:fs').appendFileSync(process.env.GITHUB_ENV,
+              \`CERT_SIGNING_KEY=\${Buffer.from(priv).toString('base64')}\nCERT_PUBLIC_KEY=\${Buffer.from(pub).toString('base64')}\n\`);
+          "
+
+      - run: pnpm db:migrate
+      - run: pnpm db:seed
+      - run: pnpm test:integration
+
+  e2e:
+    name: E2E + a11y
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: fast-lane
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: psms
+          POSTGRES_PASSWORD: psms
+          POSTGRES_DB: psms_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U psms -d psms_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      mailpit:
+        image: axllent/mailpit:latest
+        ports:
+          - 1025:1025
+          - 8025:8025
+    env:
+      DATABASE_URL: postgresql://psms:psms@localhost:5432/psms_e2e?schema=public
+      NODE_ENV: test
+      PORT: 3000
+      SESSION_SECRET: ci-session-secret-padding-padding-padding-padding-padding
+      PUBLIC_WEB_ORIGIN: http://localhost:5173
+      EMAIL_FROM_ADDRESS: no-reply@ci.psms.local
+      EMAIL_FROM_NAME: PSMS CI
+      SMTP_HOST: localhost
+      SMTP_PORT: 1025
+      S3_ENDPOINT: local
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: ci
+      S3_SECRET_ACCESS_KEY: ci
+      S3_BUCKET: psms-ci
+      S3_FORCE_PATH_STYLE: 'true'
+      ISIMS_CSV_PATH: /tmp/psms-isims-ci
+      ISIMS_IMPORT_CRON: 0 2 * * *
+      MAGIC_LINK_TTL_HOURS: 24
+      MAGIC_LINK_MAX_ACTIVE_PER_SUPERVISOR: 3
+      RATE_LIMIT_SIGNIN_PER_IP_PER_5MIN: 5
+      RATE_LIMIT_MAGICLINK_ISSUE_PER_HOUR: 20
+      VITE_API_BASE_URL: http://localhost:3000/api/v1
+      PSMS_E2E_BASE_URL: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm types:generate
+      - run: pnpm api:client
+
+      - name: Generate Ed25519 cert keys (test)
+        run: |
+          node -e "
+            const c = require('node:crypto');
+            const { privateKey, publicKey } = c.generateKeyPairSync('ed25519');
+            const priv = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+            const pub = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+            require('node:fs').appendFileSync(process.env.GITHUB_ENV,
+              \`CERT_SIGNING_KEY=\${Buffer.from(priv).toString('base64')}\nCERT_PUBLIC_KEY=\${Buffer.from(pub).toString('base64')}\n\`);
+          "
+
+      - run: pnpm db:migrate
+      - run: pnpm db:seed
+      - run: pnpm db:seed:e2e
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build web
+        run: pnpm --filter @psms/web build
+
+      - name: Start API
+        run: pnpm --filter @psms/api start &
+        env:
+          PORT: 3000
+
+      - name: Start web preview
+        run: pnpm --filter @psms/web preview --host 0.0.0.0 --port 5173 &
+
+      - name: Wait for API readiness
+        run: |
+          for i in {1..40}; do
+            if curl -sf http://localhost:3000/healthz; then exit 0; fi
+            sleep 2
+          done
+          echo "API did not become ready"
+          exit 1
+
+      - name: Wait for web readiness
+        run: |
+          for i in {1..40}; do
+            if curl -sf http://localhost:5173/; then exit 0; fi
+            sleep 2
+          done
+          echo "Web did not become ready"
+          exit 1
+
+      - run: pnpm test:e2e
+      - run: pnpm a11y
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

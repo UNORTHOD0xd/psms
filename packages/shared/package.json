@@ -17,7 +17,8 @@
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:watch": "vitest",
-    "db:seed": "tsx seed.ts"
+    "db:seed": "tsx seed.ts",
+    "db:seed:e2e": "tsx seed-e2e.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",

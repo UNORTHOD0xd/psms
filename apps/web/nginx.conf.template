@@ -1,0 +1,45 @@
+# nginx config for the production web container.
+# - SPA fallback: every non-asset path serves index.html.
+# - /api/v1/* is reverse-proxied to the API container (API_UPSTREAM).
+# - Static assets are served with a long cache window keyed on hashed names.
+
+server {
+    listen 80 default_server;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Long cache for hashed assets (Vite emits hashed filenames in /assets).
+    location /assets/ {
+        access_log off;
+        expires 1y;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # Reverse-proxy the API. The web bundle calls /api/v1/* via fetch
+    # with credentials: 'include', so the cookie is set on the same
+    # origin nginx serves.
+    location /api/ {
+        proxy_pass ${API_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+        # No buffering for SSE/streamed CSV exports.
+        proxy_buffering off;
+    }
+
+    # SPA fallback.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Belt-and-suspenders: never expose the dot-files that may leak.
+    location ~ /\. {
+        deny all;
+    }
+}
