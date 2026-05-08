@@ -1,0 +1,1856 @@
+openapi: 3.1.0
+info:
+  title: PSMS API
+  version: 1.0.0
+  description: |
+    Placement & Service Management System — HTTP API contract.
+
+    This file is the single source of truth for the API surface. Generate
+    TypeScript types from this file with `pnpm types:generate` (the result
+    is written to `packages/shared/src/types.ts`). Generate the web client
+    with `pnpm api:client`.
+
+    Every endpoint declares its required role via the `x-required-role`
+    extension. Endpoints with `security: []` are public.
+
+    Requirement traceability uses the IDs defined in `docs/specs/`:
+    INP-NN inputs, PRC-NN processing, OUT-NN outputs.
+  contact:
+    name: Axiom AI Solutions
+    email: dorien@axiom.ai
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://psms.knox.edu.jm/api/v1
+    description: Production
+  - url: https://staging.psms.knox.edu.jm/api/v1
+    description: Staging
+  - url: http://localhost:3000/api/v1
+    description: Local dev
+
+tags:
+  - name: auth
+    description: Sign-in, sign-out, password reset, magic-link issue/consume (PRC-03, INP-09).
+  - name: organisations
+    description: Host organisation registry (INP-02). Coordinator and admin only.
+  - name: opportunities
+    description: Placement opportunities published by the coordinator (INP-03).
+  - name: applications
+    description: Student applications + matching engine (INP-04, PRC-02).
+  - name: placements
+    description: Placement records, weekly hours logs, site-visit notes (INP-05, INP-08).
+  - name: evaluations
+    description: Midterm and final evaluations (INP-06, PRC-08).
+  - name: ledger
+    description: Service-hours ledger and graduation eligibility (PRC-04, PRC-05).
+  - name: certificates
+    description: PDF certificate generation and verification (PRC-06, OUT-04).
+  - name: notifications
+    description: Outbound notification log and SendGrid webhook (PRC-07).
+  - name: reports
+    description: Coordinator dashboards, accreditation pack, audit log (OUT-02..10, PRC-09, PRC-10).
+  - name: imports
+    description: iSIMS nightly CSV import status and quarantine (PRC-01).
+  - name: admin
+    description: User management, configuration, reference data (INP-10).
+  - name: health
+    description: Liveness and readiness probes.
+
+# ─────────────────────────────────────────────────────────────────────────
+# Security
+# ─────────────────────────────────────────────────────────────────────────
+security:
+  - sessionCookie: []
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: psms_session
+      description: |
+        Session cookie set by `POST /auth/sign-in`. HttpOnly, Secure, SameSite=Lax.
+        TTL 8 hours of inactivity. Used for Knox-authenticated roles
+        (student, coordinator, admin).
+
+    magicLinkToken:
+      type: apiKey
+      in: query
+      name: token
+      description: |
+        Single-use 32-byte URL-safe token used by external supervisors.
+        Issued by `POST /auth/magic-link/issue`, consumed by any endpoint
+        carrying `security: [magicLinkToken: []]`. 24-hour TTL.
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Reusable parameters
+  # ───────────────────────────────────────────────────────────────────────
+  parameters:
+    pageParam:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    pageSizeParam:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    sortParam:
+      name: sort
+      in: query
+      description: "Field to sort by. Prefix with '-' for descending."
+      schema: { type: string, example: "-created_at" }
+    idempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      description: |
+        Optional client-generated key (UUID v4) that makes a POST
+        idempotent for 24 hours. Required for the iSIMS import retry path.
+      schema: { type: string, format: uuid }
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Reusable responses
+  # ───────────────────────────────────────────────────────────────────────
+  responses:
+    BadRequest:
+      description: Malformed request — fails Zod validation.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Missing or invalid session / magic-link token.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Authenticated, but the role does not satisfy `x-required-role`.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Resource does not exist or is not visible to this user.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Idempotency-Key reuse, optimistic-lock failure, or unique-constraint violation.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    UnprocessableEntity:
+      description: Request is well-formed but violates a business rule.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Rate-limit exceeded (PRC-03 magic-link issuance, sign-in attempts).
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Created:
+      description: Resource created.
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Schemas
+  # ───────────────────────────────────────────────────────────────────────
+  schemas:
+
+    Problem:
+      type: object
+      description: RFC 7807 Problem Details.
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri, default: "about:blank" }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        # PSMS extensions
+        request_id: { type: string, description: "ULID, propagated in logs" }
+        errors:
+          type: array
+          description: "Field-level validation errors when status = 400."
+          items:
+            type: object
+            properties:
+              path: { type: string, example: "body.email" }
+              message: { type: string, example: "Invalid email" }
+
+    Pagination:
+      type: object
+      required: [page, pageSize, total]
+      properties:
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+
+    Role:
+      type: string
+      enum: [STUDENT, SUPERVISOR, COORDINATOR, ADMINISTRATOR]
+
+    # ── Auth ────────────────────────────────────────────────────────────
+
+    SignInRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 12, format: password }
+
+    SignInResponse:
+      type: object
+      required: [user]
+      properties:
+        user: { $ref: '#/components/schemas/Me' }
+
+    Me:
+      type: object
+      required: [user_id, email, full_name, role, is_active]
+      properties:
+        user_id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        full_name: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        phone: { type: string, nullable: true }
+        is_active: { type: boolean }
+        # Student-only
+        student_id: { type: string, nullable: true }
+        programme_code: { type: string, nullable: true }
+        year_of_study: { type: integer, nullable: true }
+        hours_required: { type: integer, nullable: true }
+        hours_completed: { type: integer, nullable: true }
+
+    PasswordResetRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+
+    PasswordResetConfirm:
+      type: object
+      required: [token, new_password]
+      properties:
+        token: { type: string }
+        new_password: { type: string, minLength: 12, format: password }
+
+    MagicLinkIssueRequest:
+      type: object
+      required: [supervisor_email, placement_id, purpose]
+      properties:
+        supervisor_email: { type: string, format: email }
+        placement_id: { type: string, format: uuid }
+        purpose:
+          type: string
+          enum: [ONBOARDING, HOURS_APPROVAL, EVALUATION_MIDTERM, EVALUATION_FINAL]
+
+    # ── Organisation (INP-02) ───────────────────────────────────────────
+
+    Organisation:
+      type: object
+      required: [organisation_id, name, type, industry_sector, mou_on_file]
+      properties:
+        organisation_id: { type: string, format: uuid }
+        name: { type: string }
+        type:
+          type: string
+          enum: [EMPLOYER, NGO, PUBLIC_SECTOR, ACADEMIC]
+        industry_sector: { type: string }
+        address: { type: string, nullable: true }
+        primary_contact_name: { type: string }
+        primary_contact_email: { type: string, format: email }
+        primary_contact_phone: { type: string }
+        mou_on_file: { type: boolean }
+        mou_expiry_date: { type: string, format: date, nullable: true }
+        status:
+          type: string
+          enum: [PENDING, ACTIVE, SUSPENDED]
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    OrganisationInput:
+      type: object
+      required: [name, type, industry_sector, primary_contact_name, primary_contact_email, primary_contact_phone, mou_on_file]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        type:
+          type: string
+          enum: [EMPLOYER, NGO, PUBLIC_SECTOR, ACADEMIC]
+        industry_sector: { type: string }
+        address: { type: string, nullable: true }
+        primary_contact_name: { type: string }
+        primary_contact_email: { type: string, format: email }
+        primary_contact_phone: { type: string }
+        mou_on_file: { type: boolean }
+        mou_expiry_date: { type: string, format: date, nullable: true }
+
+    OrganisationListResponse:
+      allOf:
+        - $ref: '#/components/schemas/Pagination'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/Organisation' }
+
+    # ── Opportunity (INP-03) ────────────────────────────────────────────
+
+    OpportunityStatus:
+      type: string
+      enum: [DRAFT, PUBLISHED, CLOSED, ARCHIVED]
+
+    Opportunity:
+      type: object
+      required: [opportunity_id, organisation_id, title, description, start_date, end_date, min_hours, openings, status, application_deadline]
+      properties:
+        opportunity_id: { type: string, format: uuid }
+        organisation_id: { type: string, format: uuid }
+        organisation_name: { type: string, readOnly: true }
+        title: { type: string }
+        description: { type: string }
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date }
+        min_hours: { type: integer, minimum: 1 }
+        openings: { type: integer, minimum: 1 }
+        status: { $ref: '#/components/schemas/OpportunityStatus' }
+        application_deadline: { type: string, format: date }
+        required_competencies:
+          type: array
+          items: { type: string, description: "competency_code" }
+        eligible_programmes:
+          type: array
+          items: { type: string, description: "programme_code" }
+        supervisor_name: { type: string }
+        supervisor_email: { type: string, format: email }
+        stipend_jmd: { type: number, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    OpportunityInput:
+      type: object
+      required: [organisation_id, title, description, start_date, end_date, min_hours, openings, application_deadline, required_competencies, eligible_programmes, supervisor_name, supervisor_email]
+      properties:
+        organisation_id: { type: string, format: uuid }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, minLength: 1, maxLength: 4000 }
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date }
+        min_hours: { type: integer, minimum: 1 }
+        openings: { type: integer, minimum: 1, maximum: 50 }
+        application_deadline: { type: string, format: date }
+        required_competencies:
+          type: array
+          items: { type: string }
+        eligible_programmes:
+          type: array
+          items: { type: string }
+        supervisor_name: { type: string }
+        supervisor_email: { type: string, format: email }
+        stipend_jmd: { type: number, nullable: true }
+
+    OpportunityListResponse:
+      allOf:
+        - $ref: '#/components/schemas/Pagination'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/Opportunity' }
+
+    # ── Application (INP-04, PRC-02) ────────────────────────────────────
+
+    ApplicationStatus:
+      type: string
+      enum: [SUBMITTED, UNDER_REVIEW, APPROVED, DECLINED, WITHDRAWN]
+
+    Application:
+      type: object
+      required: [application_id, student_id, opportunity_id, status, submitted_at]
+      properties:
+        application_id: { type: string, format: uuid }
+        student_id: { type: string, format: uuid }
+        opportunity_id: { type: string, format: uuid }
+        opportunity_title: { type: string, readOnly: true }
+        organisation_name: { type: string, readOnly: true }
+        motivation: { type: string, maxLength: 2000 }
+        cv_url: { type: string, format: uri }
+        status: { $ref: '#/components/schemas/ApplicationStatus' }
+        submitted_at: { type: string, format: date-time }
+        decided_at: { type: string, format: date-time, nullable: true }
+        decline_reason: { type: string, nullable: true }
+        score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          readOnly: true
+          description: "Matching score 0–1, computed on demand by PRC-02."
+
+    ApplicationInput:
+      type: object
+      required: [opportunity_id, motivation, cv_url]
+      properties:
+        opportunity_id: { type: string, format: uuid }
+        motivation: { type: string, minLength: 50, maxLength: 2000 }
+        cv_url: { type: string, format: uri, description: "Pre-signed upload URL returned by POST /uploads/cv" }
+
+    ApplicationDecision:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [APPROVE, DECLINE]
+        decline_reason:
+          type: string
+          maxLength: 1000
+          description: "Required when decision = DECLINE."
+
+    Recommendation:
+      type: object
+      required: [opportunity, score, factors]
+      properties:
+        opportunity: { $ref: '#/components/schemas/Opportunity' }
+        score: { type: number, format: float, minimum: 0, maximum: 1 }
+        factors:
+          type: object
+          description: "PRC-02 weighted breakdown for explainability."
+          properties:
+            competency_overlap: { type: number }
+            programme_match: { type: number }
+            availability_fit: { type: number }
+            freshness: { type: number }
+
+    # ── Placement & Hours (INP-05, INP-08) ──────────────────────────────
+
+    PlacementStatus:
+      type: string
+      enum: [PENDING_START, ACTIVE, COMPLETED, TERMINATED]
+
+    Placement:
+      type: object
+      required: [placement_id, application_id, student_id, opportunity_id, status, start_date, end_date]
+      properties:
+        placement_id: { type: string, format: uuid }
+        application_id: { type: string, format: uuid }
+        student_id: { type: string, format: uuid }
+        student_name: { type: string, readOnly: true }
+        opportunity_id: { type: string, format: uuid }
+        opportunity_title: { type: string, readOnly: true }
+        organisation_name: { type: string, readOnly: true }
+        supervisor_id: { type: string, format: uuid }
+        supervisor_name: { type: string, readOnly: true }
+        supervisor_email: { type: string, format: email, readOnly: true }
+        status: { $ref: '#/components/schemas/PlacementStatus' }
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date }
+        composite_rating:
+          type: number
+          format: float
+          nullable: true
+          description: "PRC-08 composite, populated after final evaluation."
+
+    PlacementListResponse:
+      allOf:
+        - $ref: '#/components/schemas/Pagination'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/Placement' }
+
+    HoursLogStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED]
+
+    HoursLogEntry:
+      type: object
+      required: [log_id, placement_id, week_number, date, hours, status]
+      properties:
+        log_id: { type: string, format: uuid }
+        placement_id: { type: string, format: uuid }
+        week_number: { type: integer, minimum: 1 }
+        date: { type: string, format: date }
+        hours: { type: number, format: float, minimum: 0.5, maximum: 168 }
+        activity_narrative: { type: string, maxLength: 1000 }
+        status: { $ref: '#/components/schemas/HoursLogStatus' }
+        approved_at: { type: string, format: date-time, nullable: true }
+        approved_by_supervisor_id: { type: string, format: uuid, nullable: true }
+        rejection_comment: { type: string, nullable: true }
+
+    HoursLogInput:
+      type: object
+      required: [week_number, date, hours, activity_narrative]
+      properties:
+        week_number: { type: integer, minimum: 1 }
+        date: { type: string, format: date }
+        hours: { type: number, format: float, minimum: 0.5, maximum: 168 }
+        activity_narrative: { type: string, minLength: 10, maxLength: 1000 }
+
+    HoursLogDecision:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [APPROVE, REJECT]
+        rejection_comment:
+          type: string
+          maxLength: 500
+
+    SiteVisitNote:
+      type: object
+      required: [note_id, placement_id, visit_date, narrative, overall_assessment]
+      properties:
+        note_id: { type: string, format: uuid }
+        placement_id: { type: string, format: uuid }
+        visit_date: { type: string, format: date }
+        narrative: { type: string, maxLength: 2000 }
+        overall_assessment:
+          type: string
+          enum: [SATISFACTORY, CONCERNS, UNSATISFACTORY]
+        follow_up_actions:
+          type: array
+          items:
+            type: object
+            properties:
+              action: { type: string }
+              due_date: { type: string, format: date }
+        created_at: { type: string, format: date-time }
+
+    # ── Evaluation (INP-06, PRC-08) ─────────────────────────────────────
+
+    EvaluationType:
+      type: string
+      enum: [MIDTERM, FINAL]
+
+    Evaluation:
+      type: object
+      required: [evaluation_id, placement_id, evaluation_type, attendance_rating, professionalism_rating, narrative, recommend_future, submitted_at]
+      properties:
+        evaluation_id: { type: string, format: uuid }
+        placement_id: { type: string, format: uuid }
+        evaluation_type: { $ref: '#/components/schemas/EvaluationType' }
+        attendance_rating: { type: integer, minimum: 1, maximum: 5 }
+        professionalism_rating: { type: integer, minimum: 1, maximum: 5 }
+        competency_ratings:
+          type: array
+          items:
+            type: object
+            required: [competency_code, rating]
+            properties:
+              competency_code: { type: string }
+              rating: { type: integer, minimum: 1, maximum: 5 }
+        narrative: { type: string, maxLength: 2000 }
+        recommend_future: { type: boolean }
+        submitted_at: { type: string, format: date-time }
+        average_score:
+          type: number
+          format: float
+          readOnly: true
+          description: "Mean of all rating fields, computed by PRC-08."
+
+    EvaluationInput:
+      type: object
+      required: [evaluation_type, attendance_rating, professionalism_rating, competency_ratings, narrative, recommend_future]
+      properties:
+        evaluation_type: { $ref: '#/components/schemas/EvaluationType' }
+        attendance_rating: { type: integer, minimum: 1, maximum: 5 }
+        professionalism_rating: { type: integer, minimum: 1, maximum: 5 }
+        competency_ratings:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [competency_code, rating]
+            properties:
+              competency_code: { type: string }
+              rating: { type: integer, minimum: 1, maximum: 5 }
+        narrative: { type: string, minLength: 50, maxLength: 2000 }
+        recommend_future: { type: boolean }
+
+    # ── Ledger (PRC-04, PRC-05) ─────────────────────────────────────────
+
+    LedgerSummary:
+      type: object
+      required: [student_id, hours_required, hours_verified, hours_pending, percentage_complete]
+      properties:
+        student_id: { type: string, format: uuid }
+        hours_required: { type: integer }
+        hours_verified: { type: number, format: float }
+        hours_pending: { type: number, format: float }
+        percentage_complete: { type: number, format: float }
+        eligibility:
+          type: string
+          enum: [ELIGIBLE, ELIGIBLE_WITH_CAUTION, INELIGIBLE]
+          description: "Result of PRC-05 graduation eligibility check."
+        gap_hours:
+          type: number
+          format: float
+          description: "Required - Verified. Negative when verified exceeds required."
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/HoursLogEntry' }
+
+    # ── Certificate (PRC-06, OUT-04) ────────────────────────────────────
+
+    Certificate:
+      type: object
+      required: [certificate_id, placement_id, student_id, pdf_url, qr_code_url, issued_at, signature_hash, revoked]
+      properties:
+        certificate_id: { type: string, format: uuid }
+        placement_id: { type: string, format: uuid }
+        student_id: { type: string, format: uuid }
+        pdf_url: { type: string, format: uri }
+        qr_code_url: { type: string, format: uri }
+        issued_at: { type: string, format: date-time }
+        signature_hash: { type: string, description: "SHA-256 of the signed PDF; published for tamper-evidence." }
+        revoked: { type: boolean }
+        revoked_at: { type: string, format: date-time, nullable: true }
+        revoked_reason: { type: string, nullable: true }
+
+    CertificateVerification:
+      type: object
+      required: [valid, certificate_id, status]
+      properties:
+        valid: { type: boolean }
+        certificate_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [VALID, REVOKED, NOT_FOUND]
+        student_name: { type: string, nullable: true }
+        organisation_name: { type: string, nullable: true }
+        placement_dates:
+          type: object
+          nullable: true
+          properties:
+            start: { type: string, format: date }
+            end: { type: string, format: date }
+        hours_completed: { type: integer, nullable: true }
+        signature_hash: { type: string, nullable: true }
+
+    # ── Reports & Audit (OUT-02..10, PRC-09, PRC-10) ────────────────────
+
+    CoordinatorDashboard:
+      type: object
+      properties:
+        active_placements: { type: integer }
+        pending_applications: { type: integer }
+        evaluations_due_this_week: { type: integer }
+        students_at_risk:
+          type: array
+          items:
+            type: object
+            properties:
+              student_id: { type: string, format: uuid }
+              student_name: { type: string }
+              gap_hours: { type: number }
+              expected_graduation: { type: string, format: date }
+        bottlenecks:
+          type: array
+          items:
+            type: object
+            properties:
+              placement_id: { type: string, format: uuid }
+              days_inactive: { type: integer }
+              last_event: { type: string }
+
+    AuditLogEntry:
+      type: object
+      required: [audit_id, ts, actor_role, action, resource_type]
+      properties:
+        audit_id: { type: string, format: uuid }
+        ts: { type: string, format: date-time }
+        request_id: { type: string }
+        actor_user_id: { type: string, format: uuid, nullable: true }
+        actor_role: { $ref: '#/components/schemas/Role' }
+        action: { type: string, example: "application.approve" }
+        resource_type: { type: string, example: "Application" }
+        resource_id: { type: string, format: uuid, nullable: true }
+        ip: { type: string }
+        user_agent: { type: string }
+        diff_summary: { type: string, nullable: true }
+
+    AuditLogResponse:
+      allOf:
+        - $ref: '#/components/schemas/Pagination'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/AuditLogEntry' }
+
+    ImportRun:
+      type: object
+      required: [run_id, started_at, status, rows_total, rows_imported, rows_quarantined]
+      properties:
+        run_id: { type: string, format: uuid }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+        status:
+          type: string
+          enum: [RUNNING, SUCCEEDED, PARTIAL, FAILED]
+        rows_total: { type: integer }
+        rows_imported: { type: integer }
+        rows_quarantined: { type: integer }
+        quarantine_reason_summary:
+          type: array
+          items:
+            type: object
+            properties:
+              reason: { type: string }
+              count: { type: integer }
+
+# ─────────────────────────────────────────────────────────────────────────
+# Paths
+# ─────────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── Health ──────────────────────────────────────────────────────────────
+  /healthz:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      security: []
+      x-required-role: PUBLIC
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "ok" }
+                  version: { type: string }
+
+  /readyz:
+    get:
+      tags: [health]
+      summary: Readiness probe (includes DB connectivity)
+      security: []
+      x-required-role: PUBLIC
+      responses:
+        '200': { description: Ready }
+        '503': { description: Not ready }
+
+  # ── Auth ────────────────────────────────────────────────────────────────
+  /auth/sign-in:
+    post:
+      tags: [auth]
+      summary: Sign in with email + password (Knox users)
+      description: |
+        Implements INP-09 for Knox-authenticated roles. Sets `psms_session`
+        cookie on success. Rate-limited to 5 attempts per IP per 5 minutes.
+      security: []
+      x-required-role: PUBLIC
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignInRequest' }
+      responses:
+        '200':
+          description: Signed in
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SignInResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/sign-out:
+    post:
+      tags: [auth]
+      summary: Sign out (invalidates session cookie)
+      x-required-role: ANY_AUTHENTICATED
+      responses:
+        '204': { description: Signed out }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Current user
+      x-required-role: ANY_AUTHENTICATED
+      responses:
+        '200':
+          description: Profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/password-reset/request:
+    post:
+      tags: [auth]
+      summary: Request a password-reset email
+      description: Always returns 204 to avoid leaking which emails are registered.
+      security: []
+      x-required-role: PUBLIC
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordResetRequest' }
+      responses:
+        '204': { description: Email dispatched (if the account exists) }
+
+  /auth/password-reset/confirm:
+    post:
+      tags: [auth]
+      summary: Confirm a password reset using the emailed token
+      security: []
+      x-required-role: PUBLIC
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordResetConfirm' }
+      responses:
+        '204': { description: Password updated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /auth/magic-link/issue:
+    post:
+      tags: [auth]
+      summary: Issue a magic-link token to a supervisor (PRC-03)
+      description: |
+        Coordinator-initiated. Generates a 32-byte URL-safe token, hashes
+        it server-side, and sends a SendGrid email. Rate-limited per
+        supervisor: max 3 active tokens at any time.
+      x-required-role: COORDINATOR
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MagicLinkIssueRequest' }
+      responses:
+        '202': { description: Issued and email queued }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/magic-link/consume:
+    post:
+      tags: [auth]
+      summary: Exchange a magic-link token for a short-lived supervisor session
+      description: |
+        Single-use. Sets a session cookie with role=SUPERVISOR scoped to the
+        placement that the token was issued for.
+      security:
+        - magicLinkToken: []
+      x-required-role: PUBLIC
+      responses:
+        '200':
+          description: Session established
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '410': { description: Token expired or already used }
+
+  # ── Organisations (INP-02) ──────────────────────────────────────────────
+  /organisations:
+    get:
+      tags: [organisations]
+      summary: List organisations
+      x-required-role: COORDINATOR_OR_ADMIN
+      parameters:
+        - $ref: '#/components/parameters/pageParam'
+        - $ref: '#/components/parameters/pageSizeParam'
+        - $ref: '#/components/parameters/sortParam'
+        - name: status
+          in: query
+          schema: { type: string, enum: [PENDING, ACTIVE, SUSPENDED] }
+        - name: q
+          in: query
+          schema: { type: string, description: "Free-text search on name." }
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganisationListResponse' }
+    post:
+      tags: [organisations]
+      summary: Register a new organisation
+      x-required-role: COORDINATOR_OR_ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrganisationInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organisation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /organisations/{organisation_id}:
+    parameters:
+      - name: organisation_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [organisations]
+      summary: Get one organisation
+      x-required-role: COORDINATOR_OR_ADMIN
+      responses:
+        '200':
+          description: One
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organisation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [organisations]
+      summary: Update an organisation
+      x-required-role: COORDINATOR_OR_ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrganisationInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organisation' }
+
+  /organisations/{organisation_id}/approve:
+    post:
+      tags: [organisations]
+      summary: Approve a pending organisation (status PENDING → ACTIVE)
+      x-required-role: ADMINISTRATOR
+      parameters:
+        - name: organisation_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Approved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organisation' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  # ── Opportunities (INP-03) ──────────────────────────────────────────────
+  /opportunities:
+    get:
+      tags: [opportunities]
+      summary: List opportunities (filtered by viewer's role)
+      description: |
+        Students see PUBLISHED opportunities they are eligible for. Coordinators
+        see all. Administrators see all. Supervisors see opportunities tied
+        to placements they supervise.
+      x-required-role: ANY_AUTHENTICATED
+      parameters:
+        - $ref: '#/components/parameters/pageParam'
+        - $ref: '#/components/parameters/pageSizeParam'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/OpportunityStatus' }
+        - name: organisation_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OpportunityListResponse' }
+    post:
+      tags: [opportunities]
+      summary: Create an opportunity (DRAFT)
+      x-required-role: COORDINATOR
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpportunityInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Opportunity' }
+
+  /opportunities/{opportunity_id}:
+    parameters:
+      - name: opportunity_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [opportunities]
+      x-required-role: ANY_AUTHENTICATED
+      responses:
+        '200':
+          description: One
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Opportunity' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [opportunities]
+      summary: Update an opportunity (only allowed in DRAFT)
+      x-required-role: COORDINATOR
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpportunityInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Opportunity' }
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+          description: Cannot edit a PUBLISHED or CLOSED opportunity.
+
+  /opportunities/{opportunity_id}/publish:
+    post:
+      tags: [opportunities]
+      summary: Publish an opportunity (DRAFT → PUBLISHED)
+      x-required-role: COORDINATOR
+      parameters:
+        - name: opportunity_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Published
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Opportunity' }
+
+  /opportunities/{opportunity_id}/close:
+    post:
+      tags: [opportunities]
+      summary: Close an opportunity (PUBLISHED → CLOSED)
+      x-required-role: COORDINATOR
+      parameters:
+        - name: opportunity_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Closed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Opportunity' }
+
+  # ── Applications & Matching (INP-04, PRC-02) ────────────────────────────
+  /me/recommendations:
+    get:
+      tags: [applications]
+      summary: Top-N matching opportunities for the current student (PRC-02)
+      description: |
+        Implements the rule-based scorer. Returns up to N opportunities ranked
+        by composite score with per-factor breakdown for explainability.
+      x-required-role: STUDENT
+      parameters:
+        - name: n
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 20, default: 3 }
+      responses:
+        '200':
+          description: Ranked list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Recommendation' }
+
+  /applications:
+    get:
+      tags: [applications]
+      summary: List applications visible to the caller
+      description: |
+        Students see only their own. Coordinators see all. Administrators see all.
+      x-required-role: ANY_AUTHENTICATED
+      parameters:
+        - $ref: '#/components/parameters/pageParam'
+        - $ref: '#/components/parameters/pageSizeParam'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ApplicationStatus' }
+        - name: opportunity_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Pagination'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Application' }
+    post:
+      tags: [applications]
+      summary: Submit an application (student)
+      x-required-role: STUDENT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApplicationInput' }
+      responses:
+        '201':
+          description: Submitted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+          description: Student is not eligible for this opportunity, or has already applied.
+
+  /applications/{application_id}:
+    parameters:
+      - name: application_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [applications]
+      x-required-role: ANY_AUTHENTICATED
+      responses:
+        '200':
+          description: One
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+
+  /applications/{application_id}/decision:
+    post:
+      tags: [applications]
+      summary: Approve or decline an application (coordinator)
+      description: |
+        On APPROVE: creates a Placement record, issues a magic-link to the
+        supervisor (PRC-03), and dispatches notifications (PRC-07).
+      x-required-role: COORDINATOR
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApplicationDecision' }
+      responses:
+        '200':
+          description: Decision recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+
+  /applications/{application_id}/withdraw:
+    post:
+      tags: [applications]
+      summary: Withdraw an application (student-initiated)
+      x-required-role: STUDENT
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Withdrawn
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Application' }
+
+  # ── Placements (INP-05, INP-08) ─────────────────────────────────────────
+  /placements:
+    get:
+      tags: [placements]
+      summary: List placements visible to the caller
+      x-required-role: ANY_AUTHENTICATED
+      parameters:
+        - $ref: '#/components/parameters/pageParam'
+        - $ref: '#/components/parameters/pageSizeParam'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/PlacementStatus' }
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlacementListResponse' }
+
+  /placements/{placement_id}:
+    parameters:
+      - name: placement_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [placements]
+      x-required-role: ANY_AUTHENTICATED
+      responses:
+        '200':
+          description: One
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Placement' }
+
+  /placements/{placement_id}/hours:
+    parameters:
+      - name: placement_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [placements]
+      summary: List weekly hours-log entries for a placement
+      x-required-role: ANY_AUTHENTICATED
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/HoursLogEntry' }
+    post:
+      tags: [placements]
+      summary: Submit a weekly hours log (student)
+      x-required-role: STUDENT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HoursLogInput' }
+      responses:
+        '201':
+          description: Submitted, pending supervisor approval
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HoursLogEntry' }
+
+  /hours/{log_id}/decision:
+    post:
+      tags: [placements]
+      summary: Approve or reject a weekly hours log (supervisor via magic link)
+      security:
+        - magicLinkToken: []
+      x-required-role: SUPERVISOR
+      parameters:
+        - name: log_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HoursLogDecision' }
+      responses:
+        '200':
+          description: Decision recorded; ledger recomputed (PRC-04)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HoursLogEntry' }
+
+  /placements/{placement_id}/site-visits:
+    parameters:
+      - name: placement_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [placements]
+      summary: Record a site-visit note (coordinator) — INP-08
+      x-required-role: COORDINATOR
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visit_date, narrative, overall_assessment]
+              properties:
+                visit_date: { type: string, format: date }
+                narrative: { type: string, minLength: 10, maxLength: 2000 }
+                overall_assessment:
+                  type: string
+                  enum: [SATISFACTORY, CONCERNS, UNSATISFACTORY]
+                follow_up_actions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      action: { type: string }
+                      due_date: { type: string, format: date }
+      responses:
+        '201':
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteVisitNote' }
+
+  # ── Evaluations (INP-06, PRC-08) ────────────────────────────────────────
+  /placements/{placement_id}/evaluations:
+    parameters:
+      - name: placement_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [evaluations]
+      summary: List evaluations for a placement
+      x-required-role: ANY_AUTHENTICATED
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Evaluation' }
+    post:
+      tags: [evaluations]
+      summary: Submit a midterm or final evaluation (supervisor via magic link)
+      description: |
+        On a FINAL evaluation with composite ≥ Satisfactory, this triggers
+        certificate generation (PRC-06) asynchronously.
+      security:
+        - magicLinkToken: []
+      x-required-role: SUPERVISOR
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvaluationInput' }
+      responses:
+        '201':
+          description: Submitted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Evaluation' }
+
+  # ── Ledger (PRC-04, PRC-05) ─────────────────────────────────────────────
+  /me/ledger:
+    get:
+      tags: [ledger]
+      summary: Service-hours ledger for the current student
+      x-required-role: STUDENT
+      responses:
+        '200':
+          description: Ledger summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LedgerSummary' }
+
+  /students/{student_id}/ledger:
+    get:
+      tags: [ledger]
+      summary: Service-hours ledger for any student (coordinator/admin view)
+      x-required-role: COORDINATOR_OR_ADMIN
+      parameters:
+        - name: student_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Ledger summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LedgerSummary' }
+
+  /students/{student_id}/eligibility:
+    get:
+      tags: [ledger]
+      summary: Run the graduation eligibility check (PRC-05)
+      x-required-role: COORDINATOR_OR_ADMIN
+      parameters:
+        - name: student_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Eligibility result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LedgerSummary' }
+
+  # ── Certificates (PRC-06, OUT-04) ───────────────────────────────────────
+  /me/certificates:
+    get:
+      tags: [certificates]
+      summary: List certificates issued to the current student
+      x-required-role: STUDENT
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Certificate' }
+
+  /certificates/{certificate_id}:
+    parameters:
+      - name: certificate_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [certificates]
+      x-required-role: ANY_AUTHENTICATED
+      responses:
+        '200':
+          description: Metadata + signed PDF URL
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Certificate' }
+
+  /certificates/{certificate_id}/pdf:
+    get:
+      tags: [certificates]
+      summary: Download the signed PDF
+      x-required-role: ANY_AUTHENTICATED
+      parameters:
+        - name: certificate_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+
+  /certificates/{certificate_id}/regenerate:
+    post:
+      tags: [certificates]
+      summary: Re-trigger certificate generation (operations recovery)
+      x-required-role: COORDINATOR_OR_ADMIN
+      parameters:
+        - name: certificate_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '202': { description: Re-generation queued }
+
+  /certificates/{certificate_id}/revoke:
+    post:
+      tags: [certificates]
+      summary: Revoke a certificate (rare; admin only)
+      x-required-role: ADMINISTRATOR
+      parameters:
+        - name: certificate_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 10, maxLength: 1000 }
+      responses:
+        '200':
+          description: Revoked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Certificate' }
+
+  /certificates/verify/{certificate_id}:
+    get:
+      tags: [certificates]
+      summary: Public certificate verification endpoint (QR-code target)
+      description: |
+        No authentication. Returns a small JSON payload sufficient for a
+        third-party employer to confirm a certificate is genuine and not
+        revoked. Does not return full PII.
+      security: []
+      x-required-role: PUBLIC
+      parameters:
+        - name: certificate_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Verification result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CertificateVerification' }
+
+  /certificates/public-key:
+    get:
+      tags: [certificates]
+      summary: Ed25519 public key for verifying certificate signatures
+      security: []
+      x-required-role: PUBLIC
+      responses:
+        '200':
+          description: Public key (PEM)
+          content:
+            application/x-pem-file:
+              schema: { type: string }
+
+  # ── Notifications (PRC-07) ──────────────────────────────────────────────
+  /me/notifications:
+    get:
+      tags: [notifications]
+      summary: List recent notifications for the current user
+      x-required-role: ANY_AUTHENTICATED
+      parameters:
+        - $ref: '#/components/parameters/pageParam'
+        - $ref: '#/components/parameters/pageSizeParam'
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Pagination'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            notification_id: { type: string, format: uuid }
+                            event_type: { type: string }
+                            subject: { type: string }
+                            sent_at: { type: string, format: date-time }
+                            read_at: { type: string, format: date-time, nullable: true }
+
+  /webhooks/sendgrid:
+    post:
+      tags: [notifications]
+      summary: SendGrid delivery-event webhook
+      description: |
+        Inbound webhook from SendGrid. Updates per-notification delivery
+        status. Validated via signed-event verification (X-Twilio-Email-Event-Webhook-Signature).
+      security: []
+      x-required-role: PUBLIC
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+      responses:
+        '204': { description: Acknowledged }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ── Reports (OUT-02..10, PRC-09, PRC-10) ────────────────────────────────
+  /reports/coordinator-dashboard:
+    get:
+      tags: [reports]
+      summary: Coordinator operational dashboard (OUT-02, PRC-09)
+      x-required-role: COORDINATOR_OR_ADMIN
+      responses:
+        '200':
+          description: Dashboard data
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoordinatorDashboard' }
+
+  /reports/accreditation-pack:
+    post:
+      tags: [reports]
+      summary: Generate the UCJ accreditation evidence pack (PRC-10, OUT-06)
+      x-required-role: COORDINATOR_OR_ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to]
+              properties:
+                from: { type: string, format: date }
+                to: { type: string, format: date }
+                programmes:
+                  type: array
+                  items: { type: string }
+      responses:
+        '202':
+          description: Generation queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id: { type: string, format: uuid }
+                  status_url: { type: string, format: uri }
+
+  /reports/hours-shortfall:
+    get:
+      tags: [reports]
+      summary: Weekly hours-shortfall early-warning report (OUT-10)
+      x-required-role: COORDINATOR_OR_ADMIN
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    student_id: { type: string, format: uuid }
+                    student_name: { type: string }
+                    programme_code: { type: string }
+                    expected_graduation: { type: string, format: date }
+                    hours_required: { type: integer }
+                    hours_verified: { type: number }
+                    gap_hours: { type: number }
+                    weeks_remaining: { type: integer }
+                    sustainable_rate_breached: { type: boolean }
+
+  /reports/audit-log:
+    get:
+      tags: [reports]
+      summary: Audit log export (OUT-09)
+      x-required-role: ADMINISTRATOR
+      parameters:
+        - $ref: '#/components/parameters/pageParam'
+        - $ref: '#/components/parameters/pageSizeParam'
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: actor_user_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: action
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Page of audit-log entries
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditLogResponse' }
+
+  # ── Imports (PRC-01) ────────────────────────────────────────────────────
+  /imports/isims/runs:
+    get:
+      tags: [imports]
+      summary: List recent iSIMS import runs
+      x-required-role: ADMINISTRATOR
+      parameters:
+        - $ref: '#/components/parameters/pageParam'
+        - $ref: '#/components/parameters/pageSizeParam'
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Pagination'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ImportRun' }
+
+  /imports/isims/runs/{run_id}:
+    parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [imports]
+      x-required-role: ADMINISTRATOR
+      responses:
+        '200':
+          description: One run with quarantine breakdown
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportRun' }
+
+  /imports/isims/trigger:
+    post:
+      tags: [imports]
+      summary: Manually trigger the iSIMS import (between scheduled runs)
+      description: Idempotent via Idempotency-Key.
+      x-required-role: ADMINISTRATOR
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKeyHeader'
+      responses:
+        '202':
+          description: Queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id: { type: string, format: uuid }
+
+  # ── Admin (INP-10) ──────────────────────────────────────────────────────
+  /admin/users:
+    get:
+      tags: [admin]
+      summary: List users
+      x-required-role: ADMINISTRATOR
+      parameters:
+        - $ref: '#/components/parameters/pageParam'
+        - $ref: '#/components/parameters/pageSizeParam'
+        - name: role
+          in: query
+          schema: { $ref: '#/components/schemas/Role' }
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Pagination'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Me' }
+
+  /admin/users/{user_id}/deactivate:
+    post:
+      tags: [admin]
+      summary: Deactivate a user (preferred over delete)
+      x-required-role: ADMINISTRATOR
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deactivated }
+
+  /admin/users/{user_id}/force-password-reset:
+    post:
+      tags: [admin]
+      summary: Force-issue a password-reset email
+      x-required-role: ADMINISTRATOR
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Email dispatched }
+
+  /admin/config:
+    get:
+      tags: [admin]
+      summary: Get system configuration (banner, quiet hours, etc.)
+      x-required-role: ADMINISTRATOR
+      responses:
+        '200':
+          description: Config
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    patch:
+      tags: [admin]
+      summary: Update system configuration
+      x-required-role: ADMINISTRATOR
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  # ── Uploads (CV, MOU PDFs, photos) ──────────────────────────────────────
+  /uploads/cv:
+    post:
+      tags: [applications]
+      summary: Pre-signed PUT URL for CV upload
+      description: |
+        Two-step upload: client posts metadata, receives a 5-minute pre-signed
+        S3-compatible PUT URL, then PUTs the binary directly. The returned
+        public URL is the value passed as `cv_url` to POST /applications.
+      x-required-role: STUDENT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content_type, size_bytes]
+              properties:
+                content_type:
+                  type: string
+                  enum: [application/pdf]
+                size_bytes:
+                  type: integer
+                  minimum: 1
+                  maximum: 5242880
+                  description: "5 MB maximum."
+      responses:
+        '200':
+          description: Pre-signed URL
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [upload_url, public_url, expires_at]
+                properties:
+                  upload_url: { type: string, format: uri }
+                  public_url: { type: string, format: uri }
+                  expires_at: { type: string, format: date-time }

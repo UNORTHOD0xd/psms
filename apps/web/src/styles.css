@@ -1,0 +1,422 @@
+/* Knox PSMS — minimal accessibility-first stylesheet.
+ * Tokens are coarse on purpose: pilot scope, not a design system.
+ * Colours pass WCAG AA on the panels they're applied to.
+ */
+
+:root {
+  --psms-bg: #ffffff;
+  --psms-bg-muted: #f5f5f7;
+  --psms-fg: #1a1a1a;
+  --psms-fg-muted: #4a4a4a;
+  --psms-border: #d0d0d6;
+  --psms-accent: #00466b;
+  --psms-accent-fg: #ffffff;
+  --psms-danger: #b00020;
+  --psms-success: #14532d;
+  --psms-warning: #7a4f00;
+  --psms-radius: 6px;
+  --psms-space: 1rem;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  color: var(--psms-fg);
+  background: var(--psms-bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  line-height: 1.45;
+}
+
+a {
+  color: var(--psms-accent);
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid #ffb000;
+  outline-offset: 2px;
+}
+
+.psms-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+}
+
+.psms-shell__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--psms-space);
+  border-bottom: 1px solid var(--psms-border);
+  background: var(--psms-bg-muted);
+}
+
+.psms-shell__user {
+  margin-left: var(--psms-space);
+  color: var(--psms-fg-muted);
+}
+
+.psms-shell__nav {
+  display: flex;
+  gap: 1.25rem;
+  padding: 0.5rem var(--psms-space);
+  border-bottom: 1px solid var(--psms-border);
+  background: #fafafa;
+}
+
+.psms-shell__nav a {
+  text-decoration: none;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--psms-radius);
+}
+
+.psms-shell__nav a[aria-current='page'] {
+  background: var(--psms-accent);
+  color: var(--psms-accent-fg);
+}
+
+.psms-shell__main {
+  padding: calc(var(--psms-space) * 1.5);
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.psms-auth {
+  max-width: 28rem;
+  margin: 4rem auto;
+  padding: 1.5rem;
+  border: 1px solid var(--psms-border);
+  border-radius: var(--psms-radius);
+}
+
+.psms-auth__hint {
+  margin-top: 1rem;
+  color: var(--psms-fg-muted);
+  font-size: 0.9rem;
+}
+
+.psms-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--psms-space);
+  margin-top: var(--psms-space);
+}
+
+.psms-card {
+  border: 1px solid var(--psms-border);
+  border-radius: var(--psms-radius);
+  padding: var(--psms-space);
+  background: var(--psms-bg);
+}
+
+.psms-card h2 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.05rem;
+}
+
+.psms-card dl {
+  margin: 0;
+}
+
+.psms-card dt {
+  font-size: 0.85rem;
+  color: var(--psms-fg-muted);
+}
+
+.psms-card dd {
+  margin: 0 0 0.5rem 0;
+  font-weight: 600;
+}
+
+.psms-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--psms-space) 0;
+}
+
+.psms-list__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--psms-border);
+}
+
+.psms-list__meta {
+  margin: 0;
+  color: var(--psms-fg-muted);
+  font-size: 0.9rem;
+}
+
+.psms-list__hours {
+  font-variant-numeric: tabular-nums;
+  color: var(--psms-fg-muted);
+}
+
+.psms-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--psms-space) 0;
+}
+
+.psms-table th,
+.psms-table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--psms-border);
+}
+
+.psms-detail__facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 1rem;
+  row-gap: 0.5rem;
+}
+
+.psms-detail__facts dt {
+  color: var(--psms-fg-muted);
+}
+
+.psms-status {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  background: var(--psms-bg-muted);
+  color: var(--psms-fg);
+}
+
+.psms-status--approved {
+  background: #d2f4dd;
+  color: var(--psms-success);
+}
+
+.psms-status--pending {
+  background: #fff2cc;
+  color: var(--psms-warning);
+}
+
+.psms-status--rejected,
+.psms-status--declined,
+.psms-status--revoked {
+  background: #f9d0d2;
+  color: var(--psms-danger);
+}
+
+.psms-form {
+  display: grid;
+  gap: var(--psms-space);
+  max-width: 32rem;
+}
+
+.psms-field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.psms-field input,
+.psms-field textarea {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--psms-border);
+  border-radius: var(--psms-radius);
+  width: 100%;
+}
+
+.psms-field--error input,
+.psms-field--error textarea {
+  border-color: var(--psms-danger);
+}
+
+.psms-field__label-text {
+  font-weight: 600;
+}
+
+.psms-field__hint {
+  margin: 0;
+  color: var(--psms-fg-muted);
+  font-size: 0.85rem;
+}
+
+.psms-field__error {
+  margin: 0;
+  color: var(--psms-danger);
+  font-size: 0.9rem;
+}
+
+.psms-btn {
+  font: inherit;
+  padding: 0.5rem 1rem;
+  border-radius: var(--psms-radius);
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.psms-btn:disabled,
+.psms-btn--disabled,
+.psms-btn[aria-disabled='true'] {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.psms-btn--primary {
+  background: var(--psms-accent);
+  color: var(--psms-accent-fg);
+}
+
+.psms-btn--secondary {
+  background: var(--psms-bg);
+  color: var(--psms-fg);
+  border-color: var(--psms-border);
+}
+
+.psms-btn--danger {
+  background: var(--psms-danger);
+  color: #fff;
+}
+
+.psms-btn--ghost {
+  background: transparent;
+  color: var(--psms-fg);
+  border-color: transparent;
+}
+
+.psms-error-banner {
+  border: 1px solid var(--psms-danger);
+  background: #fdf3f4;
+  color: var(--psms-danger);
+  border-radius: var(--psms-radius);
+  padding: 0.75rem 1rem;
+}
+
+.psms-error-banner__rid {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.8rem;
+  color: var(--psms-fg-muted);
+}
+
+.psms-loading {
+  padding: 1.5rem;
+  color: var(--psms-fg-muted);
+}
+
+.psms-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--psms-fg-muted);
+}
+
+.psms-pagination {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: var(--psms-space) 0;
+}
+
+.psms-pagination button {
+  font: inherit;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--psms-border);
+  border-radius: var(--psms-radius);
+  background: var(--psms-bg);
+  cursor: pointer;
+}
+
+.psms-pagination button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.psms-role-badge {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  margin-left: 0.5rem;
+  border-radius: var(--psms-radius);
+  font-size: 0.75rem;
+  border: 1px solid var(--psms-border);
+  background: var(--psms-bg);
+  color: var(--psms-fg-muted);
+}
+
+.psms-score {
+  color: var(--psms-fg-muted);
+  font-variant-numeric: tabular-nums;
+  margin-left: 0.5rem;
+}
+
+.psms-shell__scope {
+  margin-left: 0.5rem;
+  color: var(--psms-fg-muted);
+}
+
+.psms-form__row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.psms-form--inline {
+  gap: 0.5rem;
+  max-width: 32rem;
+}
+
+.psms-fieldset {
+  border: 1px solid var(--psms-border);
+  border-radius: var(--psms-radius);
+  padding: 0.75rem 1rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.psms-fieldset legend {
+  padding: 0 0.25rem;
+  font-weight: 600;
+}
+
+.psms-status--terminated {
+  background: #f9d0d2;
+  color: var(--psms-danger);
+}
+
+.psms-status--completed,
+.psms-status--active {
+  background: #d2f4dd;
+  color: var(--psms-success);
+}
+
+.psms-status--pending_start {
+  background: #fff2cc;
+  color: var(--psms-warning);
+}
+
+.psms-status--published,
+.psms-status--submitted,
+.psms-status--under_review {
+  background: #d6e4ff;
+  color: var(--psms-accent);
+}
+
+.psms-status--draft,
+.psms-status--closed,
+.psms-status--archived,
+.psms-status--withdrawn {
+  background: var(--psms-bg-muted);
+  color: var(--psms-fg-muted);
+}
+
+.psms-status--suspended {
+  background: #fff2cc;
+  color: var(--psms-warning);
+}

@@ -1,0 +1,50 @@
+{
+  "name": "psms",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Placement & Service Management System — Knox Community College ICT pilot.",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter='./apps/*' dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:unit": "pnpm -r test:unit",
+    "test:integration": "pnpm --filter @psms/api test:integration",
+    "test:e2e": "playwright test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yaml,yml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yaml,yml}\"",
+    "a11y": "pnpm --filter @psms/web a11y",
+    "db:migrate": "pnpm --filter @psms/shared prisma migrate deploy",
+    "db:migrate:create": "pnpm --filter @psms/shared prisma migrate dev --name",
+    "db:seed": "pnpm --filter @psms/shared db:seed",
+    "db:reset": "pnpm --filter @psms/shared prisma migrate reset --force",
+    "db:generate": "pnpm --filter @psms/shared prisma generate",
+    "types:generate": "openapi-typescript apps/api/openapi.yaml -o packages/shared/src/types.ts",
+    "api:client": "openapi-typescript apps/api/openapi.yaml -o apps/web/src/lib/api/types.ts",
+    "check:openapi-rbac": "tsx scripts/check-openapi-rbac.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^22.7.0",
+    "@typescript-eslint/eslint-plugin": "^8.8.0",
+    "@typescript-eslint/parser": "^8.8.0",
+    "eslint": "^9.12.0",
+    "eslint-config-prettier": "^9.1.0",
+    "openapi-typescript": "^7.4.1",
+    "prettier": "^3.3.3",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "yaml": "^2.6.0"
+  },
+  "pnpm": {
+    "overrides": {}
+  }
+}

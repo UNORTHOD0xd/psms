@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+coverage/
+.pnpm-store/
+*.tsbuildinfo
+packages/shared/src/types.ts
+apps/web/src/lib/api/types.ts
+packages/shared/src/generated/
+playwright-report/
+test-results/
