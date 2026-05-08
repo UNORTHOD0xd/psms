@@ -6,16 +6,17 @@
 
 import * as argon2 from 'argon2';
 
-// OWASP-recommended argon2id parameters as of 2024:
-//   memory:   46 MiB  (memoryCost = 47104 KiB)
+// argon2id parameters. OWASP's 2024 cheat-sheet floor for argon2id is
+//   memory:   46 MiB (47104 KiB)
 //   time:     1
 //   parallel: 1
-// These can be tuned in production via env (CTL-01 audit hook), but the
-// defaults are fine for the pilot's traffic profile.
+// The npm `argon2` package, however, asserts timeCost >= 2 (see the
+// `Invalid timeCost` error it throws). We bump time to 2 to satisfy
+// the library; that's still well within OWASP guidance.
 const OPTIONS: argon2.Options = {
   type: argon2.argon2id,
   memoryCost: 47104,
-  timeCost: 1,
+  timeCost: 2,
   parallelism: 1,
 };
 

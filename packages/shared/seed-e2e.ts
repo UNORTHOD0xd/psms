@@ -10,8 +10,12 @@
 import { PrismaClient } from '@prisma/client';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { hash } from 'argon2';
 import { randomBytes } from 'node:crypto';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(here, '..', '..');
 
 if (process.env.NODE_ENV === 'production') {
   console.error('Refusing to seed e2e fixtures in production.');
@@ -167,7 +171,7 @@ async function main(): Promise<void> {
     opportunity_id: oppId,
   };
 
-  const out = resolve(process.cwd(), 'tests/e2e/.fixture.json');
+  const out = resolve(REPO_ROOT, 'tests/e2e/.fixture.json');
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(fixture, null, 2));
   console.warn(`wrote e2e fixture to ${out}`);
