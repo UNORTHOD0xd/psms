@@ -30,7 +30,7 @@ ledgerRouter.get('/me/ledger', requireRole('STUDENT'), async (req, res, next) =>
 // GET /students/:user_id/ledger — coordinator/admin view.
 ledgerRouter.get(
   '/students/:user_id/ledger',
-  requireRole('COORDINATOR'),
+  requireRole('COORDINATOR_OR_ADMIN'),
   async (req, res, next) => {
     try {
       const id = z.string().uuid().parse(req.params.user_id);
@@ -102,7 +102,7 @@ ledgerRouter.get('/me/eligibility', requireRole('STUDENT'), async (req, res, nex
 
 ledgerRouter.get(
   '/students/:user_id/eligibility',
-  requireRole('COORDINATOR'),
+  requireRole('COORDINATOR_OR_ADMIN'),
   async (req, res, next) => {
     try {
       const id = z.string().uuid().parse(req.params.user_id);

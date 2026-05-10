@@ -17,6 +17,7 @@ import { z } from 'zod';
 
 import { loadEnv } from '../../lib/env.js';
 import { Problems, sendProblem } from '../../lib/problem.js';
+import { prisma } from '../../lib/prisma.js';
 import { writeAudit } from '../../middleware/audit.js';
 import { requireRole } from '../../middleware/require-role.js';
 import { getObject, putObject, signedUrl } from '../../lib/storage.js';
@@ -129,8 +130,29 @@ filesRouter.get('/files/:key', requireRole('ANY_AUTHENTICATED'), async (req, res
         return sendProblem(res, Problems.forbidden('Not the owner'));
       }
     } else if (key.startsWith('certificates/')) {
-      // Gated separately; this fallback is read-only and the certificate
-      // module performs the per-row check.
+      // Per-row check: storage key is `certificates/{certificate_id}.pdf`.
+      // Without this, any authenticated user can pull any cert PDF by guessing
+      // (or learning via the public /certificates/verify endpoint) the UUID.
+      const match = key.match(/^certificates\/([0-9a-f-]{36})\.pdf$/i);
+      if (!match) return sendProblem(res, Problems.notFound());
+      const cert = await prisma.certificate.findUnique({
+        where: { certificate_id: match[1] },
+        include: { placement: { select: { supervisor_user_id: true } } },
+      });
+      if (!cert) return sendProblem(res, Problems.notFound());
+      const role = req.auth!.role;
+      const allowed =
+        role === 'COORDINATOR' ||
+        role === 'ADMINISTRATOR' ||
+        (role === 'STUDENT' && cert.student_user_id === req.auth!.user_id) ||
+        (role === 'SUPERVISOR' &&
+          cert.placement.supervisor_user_id === req.auth!.user_id);
+      if (!allowed) return sendProblem(res, Problems.forbidden('Not authorised for this certificate'));
+    } else if (key.startsWith('reports/')) {
+      // Coordinator/admin reports (accreditation packs, etc.).
+      if (req.auth!.role !== 'COORDINATOR' && req.auth!.role !== 'ADMINISTRATOR') {
+        return sendProblem(res, Problems.forbidden('Reports are coordinator/admin only'));
+      }
     } else {
       return sendProblem(res, Problems.forbidden('Unknown key prefix'));
     }

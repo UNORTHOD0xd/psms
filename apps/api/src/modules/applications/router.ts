@@ -70,13 +70,18 @@ const ListQuerySchema = PaginationQuery.extend({
 applicationsRouter.get('/', requireRole('ANY_AUTHENTICATED'), async (req, res, next) => {
   try {
     const params = ListQuerySchema.parse(req.query);
+    // Supervisors don't see applications. Returning empty directly avoids
+    // sending an invalid-UUID sentinel to Prisma (which would 500 the request).
+    if (req.auth!.role === 'SUPERVISOR') {
+      res.json(buildPage(params, [], 0));
+      return;
+    }
     const sort = parseSort(params.sort, ['submitted_at', 'status'], {
       field: 'submitted_at',
       dir: 'desc',
     });
     const where = {
       ...(req.auth!.role === 'STUDENT' ? { student_user_id: req.auth!.user_id } : {}),
-      ...(req.auth!.role === 'SUPERVISOR' ? { application_id: '__none__' } : {}), // supervisors don't see apps
       ...(params.status ? { status: params.status } : {}),
       ...(params.opportunity_id ? { opportunity_id: params.opportunity_id } : {}),
     };
@@ -181,6 +186,9 @@ applicationsRouter.get('/:application_id', requireRole('ANY_AUTHENTICATED'), asy
       include: APPLICATION_INCLUDE,
     });
     if (!row) return sendProblem(res, Problems.notFound());
+    if (req.auth!.role === 'SUPERVISOR') {
+      return sendProblem(res, Problems.forbidden('Supervisors do not have access to applications'));
+    }
     if (req.auth!.role === 'STUDENT' && row.student_user_id !== req.auth!.user_id) {
       return sendProblem(res, Problems.forbidden());
     }

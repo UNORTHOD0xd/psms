@@ -47,6 +47,11 @@ function placementWhereForRole(auth: NonNullable<Express.Request['auth']>) {
       return { student_user_id: auth.user_id };
     case 'SUPERVISOR':
       return { supervisor_user_id: auth.user_id };
+    default: {
+      // Exhaustiveness check — adding a new Role enum value must update this switch.
+      const _exhaustive: never = auth.role;
+      throw new Error(`Unhandled role in placementWhereForRole: ${String(_exhaustive)}`);
+    }
   }
 }
 
