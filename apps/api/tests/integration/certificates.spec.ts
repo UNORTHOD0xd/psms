@@ -57,6 +57,7 @@ describe('certificates module', () => {
       data: {
         placement_id,
         student_user_id: student.user_id,
+        pdf_storage_key: `certificates/${placement_id}/cert.pdf`,
         pdf_url: 'https://files.test/cert.pdf',
         qr_code_url: 'https://files.test/cert.qr.png',
         signature: 'sig-placeholder',

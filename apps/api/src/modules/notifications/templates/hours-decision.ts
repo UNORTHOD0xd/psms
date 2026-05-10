@@ -6,7 +6,7 @@ export interface HoursDecisionParams {
   hours: number;
   decision: 'APPROVE' | 'REJECT';
   rejection_comment?: string;
-  next_steps_url: string;
+  next_steps_url?: string;
 }
 
 export function hoursDecisionTemplate(p: HoursDecisionParams) {
@@ -30,7 +30,7 @@ ${p.next_steps_url}
     `<p>Hello ${escapeHtml(p.student_name)},</p>
 <p>${escapeHtml(headline)}</p>
 ${!approved && p.rejection_comment ? `<p style="background:#fff5f5;border-left:3px solid #c0392b;padding:8px 12px;">${escapeHtml(p.rejection_comment)}</p>` : ''}
-<p><a href="${escapeHtml(p.next_steps_url)}" style="color:#0a3d62;">View ledger</a></p>`,
+<p><a href="${escapeHtml(p.next_steps_url ?? '')}" style="color:#0a3d62;">View ledger</a></p>`,
   );
   return { subject, text, html };
 }

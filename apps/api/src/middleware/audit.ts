@@ -31,7 +31,7 @@ export async function writeAudit(req: Request, entry: AuditEntry): Promise<void>
   try {
     await prisma.auditLog.create({
       data: {
-        request_id: req.id,
+        request_id: String(req.id),
         actor_user_id: req.auth?.user_id ?? null,
         actor_role: req.auth?.role ?? null,
         action: entry.action,

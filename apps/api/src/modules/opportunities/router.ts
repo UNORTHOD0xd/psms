@@ -208,19 +208,26 @@ opportunitiesRouter.patch('/:opportunity_id', requireRole('COORDINATOR'), async 
       );
     }
 
+    const {
+      stipend_jmd,
+      start_date,
+      end_date,
+      application_deadline,
+      required_competencies: _rc,
+      eligible_programmes: _ep,
+      ...rest
+    } = body;
     const updated = await prisma.opportunity.update({
       where: { opportunity_id: id },
       data: {
-        ...body,
-        ...(body.start_date ? { start_date: new Date(body.start_date) } : {}),
-        ...(body.end_date ? { end_date: new Date(body.end_date) } : {}),
-        ...(body.application_deadline
-          ? { application_deadline: new Date(body.application_deadline) }
-          : {}),
-        ...(body.stipend_jmd !== undefined
+        ...rest,
+        ...(start_date ? { start_date: new Date(start_date) } : {}),
+        ...(end_date ? { end_date: new Date(end_date) } : {}),
+        ...(application_deadline ? { application_deadline: new Date(application_deadline) } : {}),
+        ...(stipend_jmd !== undefined
           ? {
-              stipend_amount: body.stipend_jmd,
-              stipend_currency: body.stipend_jmd ? 'JMD' : null,
+              stipend_amount: stipend_jmd,
+              stipend_currency: stipend_jmd ? 'JMD' : null,
             }
           : {}),
       },

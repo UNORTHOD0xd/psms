@@ -29,7 +29,7 @@
     "db:reset": "pnpm --filter @psms/shared exec prisma migrate reset --force",
     "db:generate": "pnpm --filter @psms/shared exec prisma generate",
     "types:generate": "openapi-typescript apps/api/openapi.yaml -o packages/shared/src/types.ts",
-    "api:client": "openapi-typescript apps/api/openapi.yaml -o apps/web/src/lib/api/types.ts",
+    "api:client": "openapi-typescript apps/api/openapi.yaml -o apps/web/src/lib/api/openapi.ts",
     "check:openapi-rbac": "tsx scripts/check-openapi-rbac.ts"
   },
   "devDependencies": {
