@@ -292,9 +292,6 @@ authRouter.post('/magic-link/consume', requireRole('PUBLIC'), async (req, res, n
     const me = await renderMeFromUserId(consumed.supervisor_user_id);
     res.status(200).json(me);
   } catch (err) {
-    if (err instanceof Error && 'status' in err && err.status === 410) {
-      return sendProblem(res, Problems.gone(err.message));
-    }
     next(err);
   }
 });

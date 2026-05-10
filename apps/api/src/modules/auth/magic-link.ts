@@ -6,7 +6,7 @@
 //     never persisted.
 //   - 24-hour TTL, single use, rate-limited to 3 active per supervisor.
 
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 
 import type { MagicLinkPurpose } from '@prisma/client';
 
@@ -85,7 +85,8 @@ export interface ConsumedMagicLink {
 }
 
 export async function consumeMagicLink(rawToken: string): Promise<ConsumedMagicLink> {
-  if (!rawToken || rawToken.length < 32) {
+  // 32 random bytes base64url-encoded → 43 chars (no padding).
+  if (!rawToken || rawToken.length !== 43) {
     throw Problems.unauthorized('Invalid token');
   }
 
@@ -100,11 +101,13 @@ export async function consumeMagicLink(rawToken: string): Promise<ConsumedMagicL
     take: 200,
   });
 
-  const match = candidates.find((c) => hashToken(rawToken, c.token_salt) === c.token_hash);
+  const match = candidates.find((c) => {
+    const expected = Buffer.from(hashToken(rawToken, c.token_salt), 'hex');
+    const stored = Buffer.from(c.token_hash, 'hex');
+    return expected.length === stored.length && timingSafeEqual(expected, stored);
+  });
   if (!match) {
-    throw new (class extends Error {
-      readonly status = 410;
-    })('Token expired or already used');
+    throw Problems.gone('Token expired or already used');
   }
 
   // Atomic single-use enforcement: only mark if still unconsumed.
