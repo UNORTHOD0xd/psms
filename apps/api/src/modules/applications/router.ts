@@ -1,6 +1,6 @@
 // INP-04 + PRC-02 — Application submission, decision flow, recommendations.
 
-import { Router } from 'express';
+import { Router, type Router as ExpressRouter } from 'express';
 import { z } from 'zod';
 
 import { rankOpportunities, scoreOpportunity } from '@psms/shared';
@@ -13,7 +13,6 @@ import { writeAudit } from '../../middleware/audit.js';
 import { requireRole } from '../../middleware/require-role.js';
 import { OPPORTUNITY_INCLUDE, mapOpportunity } from '../opportunities/mapper.js';
 import { buildMagicLinkUrl, issueMagicLink } from '../auth/magic-link.js';
-import { hashPassword } from '../auth/password.js';
 import { sendEmail } from '../notifications/email.js';
 
 import { APPLICATION_INCLUDE, mapApplication } from './mapper.js';
@@ -22,8 +21,8 @@ import {
   loadStudentForMatching,
 } from './matching-adapter.js';
 
-export const applicationsRouter = Router();
-export const recommendationsRouter = Router();
+export const applicationsRouter: ExpressRouter = Router();
+export const recommendationsRouter: ExpressRouter = Router();
 
 // ── /me/recommendations ────────────────────────────────────────────────────
 
@@ -406,15 +405,16 @@ async function ensureSupervisorUser(input: {
     }
     return { user_id: existing.user_id, email: existing.email, full_name: existing.full_name };
   }
-  // New supervisor — placeholder password (never used; supervisor auths via magic link only).
-  const password_hash = await hashPassword(`supervisor-no-direct-login-${Date.now()}`);
+  // New supervisor — magic-link only authentication. password_hash stays null
+  // per the schema comment; /auth/sign-in short-circuits on a null hash so
+  // there is no password path to brute-force.
   const created = await prisma.user.create({
     data: {
       email: input.email,
       email_lower: lower,
       full_name: input.full_name,
       role: 'SUPERVISOR',
-      password_hash,
+      password_hash: null,
       supervisor_profile: {
         create: { organisation_id: input.organisation_id },
       },

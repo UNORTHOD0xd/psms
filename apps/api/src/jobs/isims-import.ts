@@ -13,7 +13,6 @@ import { z } from 'zod';
 
 import { logger } from '../lib/logger.js';
 import { prisma } from '../lib/prisma.js';
-import { hashPassword } from '../modules/auth/password.js';
 
 // Header version we accept. Bumping this number is the explicit signal
 // that the contract with iSIMS has changed; mismatches fail loud.
@@ -265,11 +264,9 @@ interface UpsertStudentInput {
 
 async function upsertStudent(input: UpsertStudentInput): Promise<void> {
   const lower = input.email.toLowerCase();
-  // Students authenticate via password; until they reset, the password
-  // hash is a randomised placeholder that cannot match any input.
-  // INP-01 onboarding email + password-reset gives them their password.
-  const placeholder_hash = await hashPassword(`isims-import-${Date.now()}-${Math.random()}`);
-
+  // Newly imported students have no password yet. /auth/sign-in short-circuits
+  // on a null password_hash; the onboarding flow is /auth/password-reset
+  // (or admin-issued /admin/users/:id/force-password-reset).
   await prisma.$transaction(async (tx) => {
     const user = await tx.user.upsert({
       where: { email_lower: lower },
@@ -278,7 +275,7 @@ async function upsertStudent(input: UpsertStudentInput): Promise<void> {
         email_lower: lower,
         full_name: input.full_name,
         role: 'STUDENT',
-        password_hash: placeholder_hash,
+        password_hash: null,
       },
       update: {
         full_name: input.full_name,
