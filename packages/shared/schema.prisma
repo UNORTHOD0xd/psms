@@ -153,27 +153,28 @@ model Competency {
 // ─── Users (INP-09, INP-10) ───────────────────────────────────────────────
 
 model User {
-  user_id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email           String   @unique @db.VarChar(254)
-  email_lower     String   @unique @db.VarChar(254) // for case-insensitive lookup; maintained app-side
-  password_hash   String?  @db.Text                  // null for SUPERVISOR (magic-link only)
-  full_name       String   @db.VarChar(200)
-  phone           String?  @db.VarChar(40)
-  role            Role
-  is_active       Boolean  @default(true)
-  last_signin_at  DateTime? @db.Timestamptz(6)
-  created_at      DateTime @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+  user_id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email          String    @unique @db.VarChar(254)
+  email_lower    String    @unique @db.VarChar(254) // for case-insensitive lookup; maintained app-side
+  password_hash  String?   @db.Text // null for SUPERVISOR (magic-link only)
+  full_name      String    @db.VarChar(200)
+  phone          String?   @db.VarChar(40)
+  role           Role
+  is_active      Boolean   @default(true)
+  last_signin_at DateTime? @db.Timestamptz(6)
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @default(now()) @db.Timestamptz(6)
 
-  student_profile     StudentProfile?
-  supervisor_profile  SupervisorProfile?
-  staff_profile       StaffProfile?
+  student_profile    StudentProfile?
+  supervisor_profile SupervisorProfile?
+  staff_profile      StaffProfile?
 
-  applications_submitted Application[]      @relation("StudentApplications")
-  applications_decided   Application[]      @relation("CoordinatorDecisions")
-  placements_supervised  Placement[]        @relation("SupervisorPlacements")
-  hours_logs_submitted   HoursLog[]         @relation("StudentHoursLogs")
-  hours_logs_approved    HoursLog[]         @relation("SupervisorHoursLogs")
+  applications_submitted Application[]        @relation("StudentApplications")
+  applications_decided   Application[]        @relation("CoordinatorDecisions")
+  placements_as_student  Placement[]          @relation("StudentPlacements")
+  placements_supervised  Placement[]          @relation("SupervisorPlacements")
+  hours_logs_submitted   HoursLog[]           @relation("StudentHoursLogs")
+  hours_logs_approved    HoursLog[]           @relation("SupervisorHoursLogs")
   site_visits_recorded   SiteVisitNote[]
   evaluations_submitted  Evaluation[]
   certificates           Certificate[]
@@ -188,17 +189,17 @@ model User {
 }
 
 model StudentProfile {
-  user_id           String   @id @db.Uuid
-  user              User     @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
-  student_id        String   @unique @db.VarChar(20)
-  programme_id      Int
-  programme         Programme @relation(fields: [programme_id], references: [programme_id], onDelete: Restrict)
-  year_of_study     Int
+  user_id            String    @id @db.Uuid
+  user               User      @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
+  student_id         String    @unique @db.VarChar(20)
+  programme_id       Int
+  programme          Programme @relation(fields: [programme_id], references: [programme_id], onDelete: Restrict)
+  year_of_study      Int
   expected_grad_date DateTime? @db.Date
-  hours_required    Int
-  hours_imported_at DateTime? @db.Timestamptz(6)
-  created_at        DateTime @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+  hours_required     Int
+  hours_imported_at  DateTime? @db.Timestamptz(6)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @default(now()) @db.Timestamptz(6)
 
   competencies StudentCompetency[]
 
@@ -207,38 +208,38 @@ model StudentProfile {
 }
 
 model StudentCompetency {
-  student_user_id   String   @db.Uuid
-  student           StudentProfile @relation(fields: [student_user_id], references: [user_id], onDelete: Restrict)
-  competency_id     Int
-  competency        Competency @relation(fields: [competency_id], references: [competency_id], onDelete: Restrict)
+  student_user_id String         @db.Uuid
+  student         StudentProfile @relation(fields: [student_user_id], references: [user_id], onDelete: Restrict)
+  competency_id   Int
+  competency      Competency     @relation(fields: [competency_id], references: [competency_id], onDelete: Restrict)
   // self-reported proficiency 1..5
-  proficiency       Int
-  declared_at       DateTime @default(now()) @db.Timestamptz(6)
+  proficiency     Int
+  declared_at     DateTime       @default(now()) @db.Timestamptz(6)
 
   @@id([student_user_id, competency_id])
   @@map("student_competency")
 }
 
 model SupervisorProfile {
-  user_id          String   @id @db.Uuid
-  user             User     @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
-  organisation_id  String   @db.Uuid
-  organisation     Organisation @relation(fields: [organisation_id], references: [organisation_id], onDelete: Restrict)
-  job_title        String?  @db.VarChar(200)
-  created_at       DateTime @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+  user_id         String       @id @db.Uuid
+  user            User         @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
+  organisation_id String       @db.Uuid
+  organisation    Organisation @relation(fields: [organisation_id], references: [organisation_id], onDelete: Restrict)
+  job_title       String?      @db.VarChar(200)
+  created_at      DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime     @default(now()) @db.Timestamptz(6)
 
   @@index([organisation_id])
   @@map("supervisor_profile")
 }
 
 model StaffProfile {
-  user_id     String   @id @db.Uuid
-  user        User     @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
-  staff_id    String   @unique @db.VarChar(20)
-  department  String   @db.VarChar(100)
-  created_at  DateTime @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+  user_id    String   @id @db.Uuid
+  user       User     @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
+  staff_id   String   @unique @db.VarChar(20)
+  department String   @db.VarChar(100)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
 
   @@map("staff_profile")
 }
@@ -246,37 +247,37 @@ model StaffProfile {
 // ─── Sessions & auth tokens (PRC-03, INP-09) ──────────────────────────────
 
 model Session {
-  session_id     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id        String   @db.Uuid
-  user           User     @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
+  session_id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id            String    @db.Uuid
+  user               User      @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
   // SHA-256 of the session-cookie value (raw value never stored)
-  cookie_hash    String   @unique @db.VarChar(64)
+  cookie_hash        String    @unique @db.VarChar(64)
   // For SUPERVISOR sessions issued via magic link, the placement scope.
-  scope_placement_id String? @db.Uuid
-  created_at     DateTime @default(now()) @db.Timestamptz(6)
-  expires_at     DateTime @db.Timestamptz(6)
-  revoked_at     DateTime? @db.Timestamptz(6)
-  ip             String?  @db.VarChar(64)
-  user_agent     String?  @db.VarChar(500)
+  scope_placement_id String?   @db.Uuid
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  expires_at         DateTime  @db.Timestamptz(6)
+  revoked_at         DateTime? @db.Timestamptz(6)
+  ip                 String?   @db.VarChar(64)
+  user_agent         String?   @db.VarChar(500)
 
   @@index([user_id, expires_at])
   @@map("session")
 }
 
 model MagicLinkToken {
-  token_id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  supervisor_user_id String  @db.Uuid
-  supervisor        User     @relation(fields: [supervisor_user_id], references: [user_id], onDelete: Restrict)
-  placement_id      String?  @db.Uuid
-  placement         Placement? @relation(fields: [placement_id], references: [placement_id], onDelete: Restrict)
-  purpose           MagicLinkPurpose
+  token_id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  supervisor_user_id String           @db.Uuid
+  supervisor         User             @relation(fields: [supervisor_user_id], references: [user_id], onDelete: Restrict)
+  placement_id       String?          @db.Uuid
+  placement          Placement?       @relation(fields: [placement_id], references: [placement_id], onDelete: Restrict)
+  purpose            MagicLinkPurpose
   // SHA-256(salt || raw-token). Raw token never stored.
-  token_hash        String   @db.VarChar(64)
-  token_salt        String   @db.VarChar(64)
-  issued_by_user_id String   @db.Uuid
-  expires_at        DateTime @db.Timestamptz(6)
-  consumed_at       DateTime? @db.Timestamptz(6)
-  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  token_hash         String           @db.VarChar(64)
+  token_salt         String           @db.VarChar(64)
+  issued_by_user_id  String           @db.Uuid
+  expires_at         DateTime         @db.Timestamptz(6)
+  consumed_at        DateTime?        @db.Timestamptz(6)
+  created_at         DateTime         @default(now()) @db.Timestamptz(6)
 
   @@unique([token_hash, token_salt])
   @@index([supervisor_user_id, consumed_at, expires_at])
@@ -284,13 +285,13 @@ model MagicLinkToken {
 }
 
 model PasswordResetToken {
-  token_id    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id     String   @db.Uuid
-  user        User     @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
-  token_hash  String   @unique @db.VarChar(64)
-  expires_at  DateTime @db.Timestamptz(6)
+  token_id    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id     String    @db.Uuid
+  user        User      @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
+  token_hash  String    @unique @db.VarChar(64)
+  expires_at  DateTime  @db.Timestamptz(6)
   consumed_at DateTime? @db.Timestamptz(6)
-  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
 
   @@index([user_id, consumed_at])
   @@map("password_reset_token")
@@ -299,22 +300,22 @@ model PasswordResetToken {
 // ─── Organisations (INP-02) ───────────────────────────────────────────────
 
 model Organisation {
-  organisation_id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                   String   @db.VarChar(200)
-  type                   OrganisationType
-  industry_sector        String   @db.VarChar(100)
-  address                String?  @db.VarChar(500)
-  primary_contact_name   String   @db.VarChar(200)
-  primary_contact_email  String   @db.VarChar(254)
-  primary_contact_phone  String   @db.VarChar(40)
-  mou_on_file            Boolean  @default(false)
-  mou_expiry_date        DateTime? @db.Date
-  status                 OrganisationStatus @default(PENDING)
-  created_at             DateTime @default(now()) @db.Timestamptz(6)
-  updated_at             DateTime @default(now()) @db.Timestamptz(6)
+  organisation_id       String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                  String             @db.VarChar(200)
+  type                  OrganisationType
+  industry_sector       String             @db.VarChar(100)
+  address               String?            @db.VarChar(500)
+  primary_contact_name  String             @db.VarChar(200)
+  primary_contact_email String             @db.VarChar(254)
+  primary_contact_phone String             @db.VarChar(40)
+  mou_on_file           Boolean            @default(false)
+  mou_expiry_date       DateTime?          @db.Date
+  status                OrganisationStatus @default(PENDING)
+  created_at            DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime           @default(now()) @db.Timestamptz(6)
 
-  supervisors    SupervisorProfile[]
-  opportunities  Opportunity[]
+  supervisors   SupervisorProfile[]
+  opportunities Opportunity[]
 
   @@index([status])
   @@map("organisation")
@@ -323,26 +324,26 @@ model Organisation {
 // ─── Opportunities (INP-03) ───────────────────────────────────────────────
 
 model Opportunity {
-  opportunity_id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organisation_id       String   @db.Uuid
-  organisation          Organisation @relation(fields: [organisation_id], references: [organisation_id], onDelete: Restrict)
-  title                 String   @db.VarChar(200)
-  description           String   @db.Text
-  start_date            DateTime @db.Date
-  end_date              DateTime @db.Date
-  min_hours             Int
-  openings              Int
-  status                OpportunityStatus @default(DRAFT)
-  application_deadline  DateTime @db.Date
-  supervisor_name       String   @db.VarChar(200)
-  supervisor_email      String   @db.VarChar(254)
-  stipend_amount        Decimal? @db.Decimal(12, 2)
-  stipend_currency      String?  @db.VarChar(3)  // ISO 4217 e.g. JMD
-  created_by_user_id    String   @db.Uuid
-  published_at          DateTime? @db.Timestamptz(6)
-  closed_at             DateTime? @db.Timestamptz(6)
-  created_at            DateTime @default(now()) @db.Timestamptz(6)
-  updated_at            DateTime @default(now()) @db.Timestamptz(6)
+  opportunity_id       String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organisation_id      String            @db.Uuid
+  organisation         Organisation      @relation(fields: [organisation_id], references: [organisation_id], onDelete: Restrict)
+  title                String            @db.VarChar(200)
+  description          String            @db.Text
+  start_date           DateTime          @db.Date
+  end_date             DateTime          @db.Date
+  min_hours            Int
+  openings             Int
+  status               OpportunityStatus @default(DRAFT)
+  application_deadline DateTime          @db.Date
+  supervisor_name      String            @db.VarChar(200)
+  supervisor_email     String            @db.VarChar(254)
+  stipend_amount       Decimal?          @db.Decimal(12, 2)
+  stipend_currency     String?           @db.VarChar(3) // ISO 4217 e.g. JMD
+  created_by_user_id   String            @db.Uuid
+  published_at         DateTime?         @db.Timestamptz(6)
+  closed_at            DateTime?         @db.Timestamptz(6)
+  created_at           DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime          @default(now()) @db.Timestamptz(6)
 
   required_competencies OpportunityCompetency[]
   eligible_programmes   OpportunityProgramme[]
@@ -355,21 +356,21 @@ model Opportunity {
 }
 
 model OpportunityCompetency {
-  opportunity_id String     @db.Uuid
+  opportunity_id String      @db.Uuid
   opportunity    Opportunity @relation(fields: [opportunity_id], references: [opportunity_id], onDelete: Restrict)
   competency_id  Int
-  competency     Competency @relation(fields: [competency_id], references: [competency_id], onDelete: Restrict)
-  weight         Decimal    @default(1.0) @db.Decimal(4, 3)
+  competency     Competency  @relation(fields: [competency_id], references: [competency_id], onDelete: Restrict)
+  weight         Decimal     @default(1.0) @db.Decimal(4, 3)
 
   @@id([opportunity_id, competency_id])
   @@map("opportunity_competency")
 }
 
 model OpportunityProgramme {
-  opportunity_id String     @db.Uuid
+  opportunity_id String      @db.Uuid
   opportunity    Opportunity @relation(fields: [opportunity_id], references: [opportunity_id], onDelete: Restrict)
   programme_id   Int
-  programme      Programme  @relation(fields: [programme_id], references: [programme_id], onDelete: Restrict)
+  programme      Programme   @relation(fields: [programme_id], references: [programme_id], onDelete: Restrict)
 
   @@id([opportunity_id, programme_id])
   @@map("opportunity_programme")
@@ -378,23 +379,23 @@ model OpportunityProgramme {
 // ─── Applications (INP-04, PRC-02) ────────────────────────────────────────
 
 model Application {
-  application_id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  student_user_id       String   @db.Uuid
-  student               User     @relation("StudentApplications", fields: [student_user_id], references: [user_id], onDelete: Restrict)
-  opportunity_id        String   @db.Uuid
-  opportunity           Opportunity @relation(fields: [opportunity_id], references: [opportunity_id], onDelete: Restrict)
-  motivation            String   @db.Text
-  cv_url                String   @db.VarChar(2048)
-  status                ApplicationStatus @default(SUBMITTED)
-  submitted_at          DateTime @default(now()) @db.Timestamptz(6)
-  decided_at            DateTime? @db.Timestamptz(6)
-  decided_by_user_id    String?  @db.Uuid
-  decided_by            User?    @relation("CoordinatorDecisions", fields: [decided_by_user_id], references: [user_id], onDelete: Restrict)
-  decline_reason        String?  @db.Text
+  application_id     String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  student_user_id    String            @db.Uuid
+  student            User              @relation("StudentApplications", fields: [student_user_id], references: [user_id], onDelete: Restrict)
+  opportunity_id     String            @db.Uuid
+  opportunity        Opportunity       @relation(fields: [opportunity_id], references: [opportunity_id], onDelete: Restrict)
+  motivation         String            @db.Text
+  cv_url             String            @db.VarChar(2048)
+  status             ApplicationStatus @default(SUBMITTED)
+  submitted_at       DateTime          @default(now()) @db.Timestamptz(6)
+  decided_at         DateTime?         @db.Timestamptz(6)
+  decided_by_user_id String?           @db.Uuid
+  decided_by         User?             @relation("CoordinatorDecisions", fields: [decided_by_user_id], references: [user_id], onDelete: Restrict)
+  decline_reason     String?           @db.Text
   // Cached score from PRC-02 at decision time. Not authoritative — recompute on demand.
-  score_snapshot        Decimal? @db.Decimal(4, 3)
-  created_at            DateTime @default(now()) @db.Timestamptz(6)
-  updated_at            DateTime @default(now()) @db.Timestamptz(6)
+  score_snapshot     Decimal?          @db.Decimal(4, 3)
+  created_at         DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime          @default(now()) @db.Timestamptz(6)
 
   placement Placement?
 
@@ -407,27 +408,28 @@ model Application {
 // ─── Placements & hours (INP-05, INP-08) ──────────────────────────────────
 
 model Placement {
-  placement_id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  application_id      String   @unique @db.Uuid
-  application         Application @relation(fields: [application_id], references: [application_id], onDelete: Restrict)
-  student_user_id     String   @db.Uuid
-  opportunity_id      String   @db.Uuid
-  opportunity         Opportunity @relation(fields: [opportunity_id], references: [opportunity_id], onDelete: Restrict)
-  supervisor_user_id  String   @db.Uuid
-  supervisor          User     @relation("SupervisorPlacements", fields: [supervisor_user_id], references: [user_id], onDelete: Restrict)
-  status              PlacementStatus @default(PENDING_START)
-  start_date          DateTime @db.Date
-  end_date            DateTime @db.Date
+  placement_id       String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  application_id     String          @unique @db.Uuid
+  application        Application     @relation(fields: [application_id], references: [application_id], onDelete: Restrict)
+  student_user_id    String          @db.Uuid
+  student            User            @relation("StudentPlacements", fields: [student_user_id], references: [user_id], onDelete: Restrict)
+  opportunity_id     String          @db.Uuid
+  opportunity        Opportunity     @relation(fields: [opportunity_id], references: [opportunity_id], onDelete: Restrict)
+  supervisor_user_id String          @db.Uuid
+  supervisor         User            @relation("SupervisorPlacements", fields: [supervisor_user_id], references: [user_id], onDelete: Restrict)
+  status             PlacementStatus @default(PENDING_START)
+  start_date         DateTime        @db.Date
+  end_date           DateTime        @db.Date
   // Composite rating (0..5), populated by PRC-08 once a FINAL evaluation lands.
-  composite_rating    Decimal? @db.Decimal(3, 2)
-  terminated_reason   String?  @db.Text
-  created_at          DateTime @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime @default(now()) @db.Timestamptz(6)
+  composite_rating   Decimal?        @db.Decimal(3, 2)
+  terminated_reason  String?         @db.Text
+  created_at         DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime        @default(now()) @db.Timestamptz(6)
 
-  hours_logs       HoursLog[]
-  site_visits      SiteVisitNote[]
-  evaluations      Evaluation[]
-  certificate      Certificate?
+  hours_logs        HoursLog[]
+  site_visits       SiteVisitNote[]
+  evaluations       Evaluation[]
+  certificate       Certificate?
   magic_link_tokens MagicLinkToken[]
 
   @@index([student_user_id, status])
@@ -436,22 +438,22 @@ model Placement {
 }
 
 model HoursLog {
-  log_id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  placement_id              String   @db.Uuid
-  placement                 Placement @relation(fields: [placement_id], references: [placement_id], onDelete: Restrict)
-  student_user_id           String   @db.Uuid
-  student                   User     @relation("StudentHoursLogs", fields: [student_user_id], references: [user_id], onDelete: Restrict)
+  log_id                    String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  placement_id              String         @db.Uuid
+  placement                 Placement      @relation(fields: [placement_id], references: [placement_id], onDelete: Restrict)
+  student_user_id           String         @db.Uuid
+  student                   User           @relation("StudentHoursLogs", fields: [student_user_id], references: [user_id], onDelete: Restrict)
   week_number               Int
-  date                      DateTime @db.Date
-  hours                     Decimal  @db.Decimal(5, 2)
-  activity_narrative        String   @db.Text
+  date                      DateTime       @db.Date
+  hours                     Decimal        @db.Decimal(5, 2)
+  activity_narrative        String         @db.Text
   status                    HoursLogStatus @default(PENDING)
-  approved_at               DateTime? @db.Timestamptz(6)
-  approved_by_supervisor_id String?  @db.Uuid
-  approved_by               User?    @relation("SupervisorHoursLogs", fields: [approved_by_supervisor_id], references: [user_id], onDelete: Restrict)
-  rejection_comment         String?  @db.Text
-  created_at                DateTime @default(now()) @db.Timestamptz(6)
-  updated_at                DateTime @default(now()) @db.Timestamptz(6)
+  approved_at               DateTime?      @db.Timestamptz(6)
+  approved_by_supervisor_id String?        @db.Uuid
+  approved_by               User?          @relation("SupervisorHoursLogs", fields: [approved_by_supervisor_id], references: [user_id], onDelete: Restrict)
+  rejection_comment         String?        @db.Text
+  created_at                DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime       @default(now()) @db.Timestamptz(6)
 
   @@unique([placement_id, week_number, date], name: "uq_placement_week_date")
   @@index([placement_id, status])
@@ -459,15 +461,15 @@ model HoursLog {
 }
 
 model SiteVisitNote {
-  note_id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  placement_id         String   @db.Uuid
-  placement            Placement @relation(fields: [placement_id], references: [placement_id], onDelete: Restrict)
-  coordinator_user_id  String   @db.Uuid
-  coordinator          User     @relation(fields: [coordinator_user_id], references: [user_id], onDelete: Restrict)
-  visit_date           DateTime @db.Date
-  narrative            String   @db.Text
-  overall_assessment   SiteVisitAssessment
-  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  note_id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  placement_id        String              @db.Uuid
+  placement           Placement           @relation(fields: [placement_id], references: [placement_id], onDelete: Restrict)
+  coordinator_user_id String              @db.Uuid
+  coordinator         User                @relation(fields: [coordinator_user_id], references: [user_id], onDelete: Restrict)
+  visit_date          DateTime            @db.Date
+  narrative           String              @db.Text
+  overall_assessment  SiteVisitAssessment
+  created_at          DateTime            @default(now()) @db.Timestamptz(6)
 
   follow_up_actions SiteVisitFollowUp[]
 
@@ -476,12 +478,12 @@ model SiteVisitNote {
 }
 
 model SiteVisitFollowUp {
-  followup_id  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  note_id      String   @db.Uuid
-  note         SiteVisitNote @relation(fields: [note_id], references: [note_id], onDelete: Restrict)
-  action       String   @db.Text
-  due_date     DateTime @db.Date
-  resolved_at  DateTime? @db.Timestamptz(6)
+  followup_id String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  note_id     String        @db.Uuid
+  note        SiteVisitNote @relation(fields: [note_id], references: [note_id], onDelete: Restrict)
+  action      String        @db.Text
+  due_date    DateTime      @db.Date
+  resolved_at DateTime?     @db.Timestamptz(6)
 
   @@index([note_id])
   @@map("site_visit_followup")
@@ -490,21 +492,21 @@ model SiteVisitFollowUp {
 // ─── Evaluations (INP-06, PRC-08) ─────────────────────────────────────────
 
 model Evaluation {
-  evaluation_id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  placement_id           String   @db.Uuid
-  placement              Placement @relation(fields: [placement_id], references: [placement_id], onDelete: Restrict)
+  evaluation_id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  placement_id           String         @db.Uuid
+  placement              Placement      @relation(fields: [placement_id], references: [placement_id], onDelete: Restrict)
   evaluation_type        EvaluationType
-  attendance_rating      Int      // 1..5
-  professionalism_rating Int      // 1..5
-  narrative              String   @db.Text
+  attendance_rating      Int // 1..5
+  professionalism_rating Int // 1..5
+  narrative              String         @db.Text
   recommend_future       Boolean
-  submitted_by_user_id   String   @db.Uuid
-  submitted_by           User     @relation(fields: [submitted_by_user_id], references: [user_id], onDelete: Restrict)
-  submitted_at           DateTime @default(now()) @db.Timestamptz(6)
+  submitted_by_user_id   String         @db.Uuid
+  submitted_by           User           @relation(fields: [submitted_by_user_id], references: [user_id], onDelete: Restrict)
+  submitted_at           DateTime       @default(now()) @db.Timestamptz(6)
   // PRC-08 mean-of-means; cached on insert.
-  average_score          Decimal  @db.Decimal(4, 3)
-  created_at             DateTime @default(now()) @db.Timestamptz(6)
-  updated_at             DateTime @default(now()) @db.Timestamptz(6)
+  average_score          Decimal        @db.Decimal(4, 3)
+  created_at             DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime       @default(now()) @db.Timestamptz(6)
 
   competency_ratings EvaluationCompetencyRating[]
 
@@ -514,11 +516,11 @@ model Evaluation {
 }
 
 model EvaluationCompetencyRating {
-  evaluation_id  String   @db.Uuid
-  evaluation     Evaluation @relation(fields: [evaluation_id], references: [evaluation_id], onDelete: Restrict)
-  competency_id  Int
-  competency     Competency @relation(fields: [competency_id], references: [competency_id], onDelete: Restrict)
-  rating         Int      // 1..5
+  evaluation_id String     @db.Uuid
+  evaluation    Evaluation @relation(fields: [evaluation_id], references: [evaluation_id], onDelete: Restrict)
+  competency_id Int
+  competency    Competency @relation(fields: [competency_id], references: [competency_id], onDelete: Restrict)
+  rating        Int // 1..5
 
   @@id([evaluation_id, competency_id])
   @@map("evaluation_competency_rating")
@@ -527,23 +529,23 @@ model EvaluationCompetencyRating {
 // ─── Certificates (PRC-06, OUT-04) ────────────────────────────────────────
 
 model Certificate {
-  certificate_id   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  placement_id     String   @unique @db.Uuid
-  placement        Placement @relation(fields: [placement_id], references: [placement_id], onDelete: Restrict)
-  student_user_id  String   @db.Uuid
-  student          User     @relation(fields: [student_user_id], references: [user_id], onDelete: Restrict)
-  pdf_storage_key  String   @db.VarChar(500) // S3 key (private)
-  pdf_url          String   @db.VarChar(2048) // pre-signed read URL, refreshed on access
-  qr_code_url      String   @db.VarChar(2048)
-  signature_hash   String   @db.VarChar(64) // SHA-256 of signed PDF bytes
-  signature        String   @db.Text        // base64 Ed25519 signature over signature_hash
-  issued_at        DateTime @default(now()) @db.Timestamptz(6)
-  revoked          Boolean  @default(false)
-  revoked_at       DateTime? @db.Timestamptz(6)
-  revoked_by_user_id String? @db.Uuid
-  revoked_reason   String?  @db.Text
-  created_at       DateTime @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+  certificate_id     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  placement_id       String    @unique @db.Uuid
+  placement          Placement @relation(fields: [placement_id], references: [placement_id], onDelete: Restrict)
+  student_user_id    String    @db.Uuid
+  student            User      @relation(fields: [student_user_id], references: [user_id], onDelete: Restrict)
+  pdf_storage_key    String    @db.VarChar(500) // S3 key (private)
+  pdf_url            String    @db.VarChar(2048) // pre-signed read URL, refreshed on access
+  qr_code_url        String    @db.VarChar(2048)
+  signature_hash     String    @db.VarChar(64) // SHA-256 of signed PDF bytes
+  signature          String    @db.Text // base64 Ed25519 signature over signature_hash
+  issued_at          DateTime  @default(now()) @db.Timestamptz(6)
+  revoked            Boolean   @default(false)
+  revoked_at         DateTime? @db.Timestamptz(6)
+  revoked_by_user_id String?   @db.Uuid
+  revoked_reason     String?   @db.Text
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @default(now()) @db.Timestamptz(6)
 
   @@index([student_user_id])
   @@map("certificate")
@@ -552,23 +554,23 @@ model Certificate {
 // ─── Notifications (PRC-07) ───────────────────────────────────────────────
 
 model Notification {
-  notification_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  user_id         String   @db.Uuid
-  user            User     @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
-  channel         NotificationChannel @default(EMAIL)
-  event_type      String   @db.VarChar(100) // e.g. "application.approved"
-  subject         String   @db.VarChar(300)
-  body_template   String   @db.VarChar(100) // template name
-  body_params     Json
-  status          NotificationStatus @default(QUEUED)
-  sendgrid_message_id String? @db.VarChar(200)
-  queued_at       DateTime @default(now()) @db.Timestamptz(6)
-  sent_at         DateTime? @db.Timestamptz(6)
-  delivered_at    DateTime? @db.Timestamptz(6)
-  read_at         DateTime? @db.Timestamptz(6)
-  failure_reason  String?  @db.Text
-  created_at      DateTime @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+  notification_id     String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id             String              @db.Uuid
+  user                User                @relation(fields: [user_id], references: [user_id], onDelete: Restrict)
+  channel             NotificationChannel @default(EMAIL)
+  event_type          String              @db.VarChar(100) // e.g. "application.approved"
+  subject             String              @db.VarChar(300)
+  body_template       String              @db.VarChar(100) // template name
+  body_params         Json
+  status              NotificationStatus  @default(QUEUED)
+  sendgrid_message_id String?             @db.VarChar(200)
+  queued_at           DateTime            @default(now()) @db.Timestamptz(6)
+  sent_at             DateTime?           @db.Timestamptz(6)
+  delivered_at        DateTime?           @db.Timestamptz(6)
+  read_at             DateTime?           @db.Timestamptz(6)
+  failure_reason      String?             @db.Text
+  created_at          DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime            @default(now()) @db.Timestamptz(6)
 
   delivery_events NotificationDeliveryEvent[]
 
@@ -579,14 +581,14 @@ model Notification {
 }
 
 model NotificationDeliveryEvent {
-  event_id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  notification_id String   @db.Uuid
+  event_id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  notification_id String       @db.Uuid
   notification    Notification @relation(fields: [notification_id], references: [notification_id], onDelete: Restrict)
   // SendGrid event types: processed, delivered, open, click, bounce, dropped, etc.
-  event_type      String   @db.VarChar(50)
+  event_type      String       @db.VarChar(50)
   payload         Json
-  occurred_at     DateTime @db.Timestamptz(6)
-  received_at     DateTime @default(now()) @db.Timestamptz(6)
+  occurred_at     DateTime     @db.Timestamptz(6)
+  received_at     DateTime     @default(now()) @db.Timestamptz(6)
 
   @@index([notification_id, occurred_at])
   @@map("notification_delivery_event")
@@ -618,17 +620,17 @@ model AuditLog {
 // ─── iSIMS imports (PRC-01) ───────────────────────────────────────────────
 
 model ImportRun {
-  run_id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  source              String   @default("isims") @db.VarChar(50)
-  source_filename     String?  @db.VarChar(500)
-  started_at          DateTime @default(now()) @db.Timestamptz(6)
-  completed_at        DateTime? @db.Timestamptz(6)
-  status              ImportRunStatus @default(RUNNING)
-  rows_total          Int      @default(0)
-  rows_imported       Int      @default(0)
-  rows_quarantined    Int      @default(0)
-  triggered_by_user_id String? @db.Uuid
-  idempotency_key     String?  @unique @db.VarChar(64)
+  run_id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  source               String          @default("isims") @db.VarChar(50)
+  source_filename      String?         @db.VarChar(500)
+  started_at           DateTime        @default(now()) @db.Timestamptz(6)
+  completed_at         DateTime?       @db.Timestamptz(6)
+  status               ImportRunStatus @default(RUNNING)
+  rows_total           Int             @default(0)
+  rows_imported        Int             @default(0)
+  rows_quarantined     Int             @default(0)
+  triggered_by_user_id String?         @db.Uuid
+  idempotency_key      String?         @unique @db.VarChar(64)
 
   quarantine_rows ImportQuarantineRow[]
 
@@ -637,13 +639,13 @@ model ImportRun {
 }
 
 model ImportQuarantineRow {
-  quarantine_id String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  run_id        String   @db.Uuid
+  quarantine_id String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  run_id        String    @db.Uuid
   run           ImportRun @relation(fields: [run_id], references: [run_id], onDelete: Restrict)
   row_number    Int
   raw_payload   Json
-  reason        String   @db.VarChar(500)
-  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  reason        String    @db.VarChar(500)
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
 
   @@index([run_id, reason])
   @@map("import_quarantine_row")
@@ -652,10 +654,10 @@ model ImportQuarantineRow {
 // ─── System config & idempotency ──────────────────────────────────────────
 
 model SystemConfig {
-  key        String   @id @db.VarChar(100)
-  value      Json
-  updated_by_user_id String? @db.Uuid
-  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  key                String   @id @db.VarChar(100)
+  value              Json
+  updated_by_user_id String?  @db.Uuid
+  updated_at         DateTime @default(now()) @db.Timestamptz(6)
 
   @@map("system_config")
 }
