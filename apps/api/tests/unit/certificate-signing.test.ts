@@ -24,7 +24,6 @@ describe('certificate signing (CTL-06)', () => {
     const { privateKey, publicKey } = generateKeyPairSync('ed25519');
     process.env.NODE_ENV = 'test';
     process.env.DATABASE_URL = 'postgres://localhost/psms';
-    process.env.SESSION_SECRET = 'x'.repeat(32);
     process.env.CERT_SIGNING_KEY = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
     process.env.CERT_PUBLIC_KEY = publicKey.export({ type: 'spki', format: 'pem' }) as string;
     resetEnvCacheForTesting();

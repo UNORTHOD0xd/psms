@@ -7,7 +7,6 @@ const Env = z.object({
 
   DATABASE_URL: z.string().url(),
 
-  SESSION_SECRET: z.string().min(32),
   SESSION_COOKIE_NAME: z.string().default('psms_session'),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(8),
 

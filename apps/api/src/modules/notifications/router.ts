@@ -14,7 +14,6 @@ import { logger } from '../../lib/logger.js';
 import { prisma } from '../../lib/prisma.js';
 import { Problems, sendProblem } from '../../lib/problem.js';
 import { PaginationQuery, buildPage, parseSort, toSkipTake } from '../../lib/pagination.js';
-import { writeAudit } from '../../middleware/audit.js';
 import { requireRole } from '../../middleware/require-role.js';
 
 export const notificationsRouter = Router();
@@ -240,6 +239,3 @@ export async function ingestDeliveryEventForTest(input: {
   });
 }
 
-// `writeAudit` is imported to keep the lint happy if a future read-side
-// admin endpoint lands here (e.g. a coordinator inspecting failed sends).
-void writeAudit;

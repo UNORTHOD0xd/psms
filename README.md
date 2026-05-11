@@ -200,15 +200,17 @@ pnpm dev
 
 ### First-time UI walkthrough
 
-The dev DB has no users by default — the seed only loads reference
-data. To get a working SPA login locally, run the e2e fixture seeder:
+The dev DB has no users by default — `pnpm db:seed` only loads reference
+data (programmes + competencies). To get a working SPA login locally,
+run the e2e fixture seeder:
 
 ```bash
 pnpm db:seed:e2e
 ```
 
-That writes `tests/e2e/.fixture.json` (gitignored) with deterministic
-credentials for one user per role:
+That writes `tests/e2e/.fixture.json` (gitignored) and creates one user
+per role, one ACTIVE organisation, and one PUBLISHED opportunity so the
+student can apply end-to-end.
 
 | Role | Email | Password |
 |---|---|---|
@@ -217,8 +219,13 @@ credentials for one user per role:
 | Administrator | `e2e.admin@test.psms` | (same) |
 | Supervisor | `e2e.supervisor@test.psms` | (magic-link only) |
 
-It also creates one ACTIVE organisation and a PUBLISHED opportunity, so
-the student can apply end-to-end.
+Then sign in at <http://localhost:5173/sign-in>. The role-home redirect
+sends you to `/student`, `/coordinator`, or `/admin` based on the user.
+Supervisors don't sign in directly — open Mailpit at
+<http://localhost:8025> to claim the magic link the system sends them.
+
+Re-running `pnpm db:seed:e2e` is idempotent (upserts), so it's safe to
+run repeatedly after a `pnpm db:reset`.
 
 ---
 
@@ -270,7 +277,7 @@ The categories:
 
 - **Runtime** — `NODE_ENV`, `PORT`, `LOG_LEVEL`
 - **Database** — `DATABASE_URL`
-- **Sessions** — `SESSION_SECRET`, `SESSION_TTL_HOURS` (CTL-10)
+- **Sessions** — `SESSION_COOKIE_NAME`, `SESSION_TTL_HOURS` (CTL-10; sessions are DB-backed with SHA-256(cookie_value), so no signing secret)
 - **Magic links (PRC-03)** — `MAGIC_LINK_TTL_HOURS`, `MAGIC_LINK_MAX_ACTIVE_PER_SUPERVISOR`, `PUBLIC_WEB_ORIGIN`
 - **Email** — `SENDGRID_API_KEY` (or fall back to local SMTP via Mailpit), `SENDGRID_WEBHOOK_PUBLIC_KEY`, `EMAIL_FROM_ADDRESS`
 - **Certificate signing (PRC-06 / CTL-06)** — `CERT_SIGNING_KEY`, `CERT_PUBLIC_KEY` (Ed25519, base64 PEM)

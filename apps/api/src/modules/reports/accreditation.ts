@@ -44,7 +44,7 @@ export async function buildAccreditationPack(
   const placements = await prisma.placement.findMany({
     where: placementWhere,
     include: {
-      student: { select: { user_id: true, full_name: true, email: true } },
+      student: { select: { user_id: true, full_name: true } },
       opportunity: {
         include: {
           organisation: { select: { organisation_id: true, name: true, type: true } },

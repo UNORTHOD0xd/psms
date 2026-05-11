@@ -51,7 +51,6 @@ function withEnv(extras: Record<string, string>, fn: () => void): void {
 
 const baseEnv = {
   DATABASE_URL: 'postgres://localhost/psms',
-  SESSION_SECRET: 'x'.repeat(32),
 };
 
 describe('session cookie attributes (CTL-10)', () => {
