@@ -121,40 +121,165 @@ async function main(): Promise<void> {
     update: { status: 'ACTIVE' },
   });
 
-  const programme = await prisma.programme.findUniqueOrThrow({
-    where: { programme_code: 'ICT-DIP' },
-  });
-  const competency = await prisma.competency.findUniqueOrThrow({
-    where: { competency_code: 'PROG-WEB' },
+  const programmes = await prisma.programme.findMany();
+  const programmeByCode = new Map(programmes.map((p) => [p.programme_code, p]));
+  const competencies = await prisma.competency.findMany();
+  const competencyByCode = new Map(competencies.map((c) => [c.competency_code, c]));
+
+  const secondOrg = await prisma.organisation.upsert({
+    where: { organisation_id: '00000000-0000-0000-0000-000000000e2f' },
+    create: {
+      organisation_id: '00000000-0000-0000-0000-000000000e2f',
+      name: 'Kingston Cloud Co-op',
+      type: 'EMPLOYER',
+      industry_sector: 'Cloud services',
+      primary_contact_name: 'Marcia Henry',
+      primary_contact_email: 'marcia@kingston-cloud.test',
+      primary_contact_phone: '+1-876-555-0144',
+      mou_on_file: true,
+      status: 'ACTIVE',
+    },
+    update: { status: 'ACTIVE' },
   });
 
   const oppId = '00000000-0000-0000-0000-000000000abc';
-  await prisma.opportunity.upsert({
-    where: { opportunity_id: oppId },
-    create: {
+  interface OppSpec {
+    opportunity_id: string;
+    organisation_id: string;
+    title: string;
+    description: string;
+    days_until_start: number;
+    duration_days: number;
+    min_hours: number;
+    openings: number;
+    eligible_programme_codes: ReadonlyArray<string>;
+    required_competency_codes: ReadonlyArray<string>;
+    supervisor_name: string;
+    supervisor_email: string;
+  }
+  const oppSpecs: ReadonlyArray<OppSpec> = [
+    {
       opportunity_id: oppId,
       organisation_id: org.organisation_id,
-      created_by_user_id: coordId,
       title: 'E2E Frontend Internship',
       description: 'Build the PSMS UI alongside the project team.',
-      start_date: new Date(Date.now() + 7 * 86400_000),
-      end_date: new Date(Date.now() + 90 * 86400_000),
-      application_deadline: new Date(Date.now() + 5 * 86400_000),
+      days_until_start: 7,
+      duration_days: 83,
       min_hours: 60,
       openings: 2,
+      eligible_programme_codes: ['ICT-DIP'],
+      required_competency_codes: ['PROG-WEB'],
       supervisor_name: 'E2E Supervisor',
       supervisor_email: SUPERVISOR_EMAIL,
-      status: 'PUBLISHED',
-      published_at: new Date(),
-      eligible_programmes: {
-        create: [{ programme_id: programme.programme_id }],
-      },
-      required_competencies: {
-        create: [{ competency_id: competency.competency_id }],
-      },
     },
-    update: { status: 'PUBLISHED' },
-  });
+    {
+      opportunity_id: '00000000-0000-0000-0000-000000000ab1',
+      organisation_id: org.organisation_id,
+      title: 'Backend API Engineering Internship',
+      description: 'Pair with the platform team on a TypeScript REST API: authentication, data modelling, observability.',
+      days_until_start: 14,
+      duration_days: 84,
+      min_hours: 120,
+      openings: 1,
+      eligible_programme_codes: ['ICT-DIP', 'CS-BSC'],
+      required_competency_codes: ['PROG-BE', 'PROG-DB'],
+      supervisor_name: 'E2E Supervisor',
+      supervisor_email: SUPERVISOR_EMAIL,
+    },
+    {
+      opportunity_id: '00000000-0000-0000-0000-000000000ab2',
+      organisation_id: secondOrg.organisation_id,
+      title: 'AWS Cloud Operations Attachment',
+      description: 'Shadow the SRE rotation: incident response, infrastructure-as-code, cost dashboards on AWS.',
+      days_until_start: 21,
+      duration_days: 70,
+      min_hours: 90,
+      openings: 2,
+      eligible_programme_codes: ['CS-BSC', 'IS-BSC'],
+      required_competency_codes: ['CLOUD-AWS', 'OS-LINUX'],
+      supervisor_name: 'Marcia Henry',
+      supervisor_email: 'marcia@kingston-cloud.test',
+    },
+    {
+      opportunity_id: '00000000-0000-0000-0000-000000000ab3',
+      organisation_id: secondOrg.organisation_id,
+      title: 'Network Operations Helpdesk',
+      description: 'Triage LAN/WiFi tickets for the campus network team; weekly site visits to two satellite offices.',
+      days_until_start: 5,
+      duration_days: 60,
+      min_hours: 40,
+      openings: 3,
+      eligible_programme_codes: ['NET-CERT', 'ICT-DIP'],
+      required_competency_codes: ['NET-LAN', 'NET-SEC'],
+      supervisor_name: 'Tariq Bryan',
+      supervisor_email: 'tariq@kingston-cloud.test',
+    },
+    {
+      opportunity_id: '00000000-0000-0000-0000-000000000ab4',
+      organisation_id: org.organisation_id,
+      title: 'Community ICT Skills Volunteer',
+      description: 'Run Saturday computer-literacy clinics at the Spanish Town parish library — service-hours only, no stipend.',
+      days_until_start: 3,
+      duration_days: 120,
+      min_hours: 30,
+      openings: 5,
+      eligible_programme_codes: [], // open to all programmes
+      required_competency_codes: ['SOFT-COMM', 'SOFT-TEAM'],
+      supervisor_name: 'E2E Supervisor',
+      supervisor_email: SUPERVISOR_EMAIL,
+    },
+  ];
+
+  for (const spec of oppSpecs) {
+    const programmeRows = spec.eligible_programme_codes.map((code) => {
+      const p = programmeByCode.get(code);
+      if (!p) throw new Error(`seed-e2e: unknown programme_code "${code}"`);
+      return { programme_id: p.programme_id };
+    });
+    const competencyRows = spec.required_competency_codes.map((code) => {
+      const c = competencyByCode.get(code);
+      if (!c) throw new Error(`seed-e2e: unknown competency_code "${code}"`);
+      return { competency_id: c.competency_id };
+    });
+
+    await prisma.opportunityProgramme.deleteMany({
+      where: { opportunity_id: spec.opportunity_id },
+    });
+    await prisma.opportunityCompetency.deleteMany({
+      where: { opportunity_id: spec.opportunity_id },
+    });
+
+    await prisma.opportunity.upsert({
+      where: { opportunity_id: spec.opportunity_id },
+      create: {
+        opportunity_id: spec.opportunity_id,
+        organisation_id: spec.organisation_id,
+        created_by_user_id: coordId,
+        title: spec.title,
+        description: spec.description,
+        start_date: new Date(Date.now() + spec.days_until_start * 86400_000),
+        end_date: new Date(Date.now() + (spec.days_until_start + spec.duration_days) * 86400_000),
+        application_deadline: new Date(
+          Date.now() + Math.max(spec.days_until_start - 2, 1) * 86400_000,
+        ),
+        min_hours: spec.min_hours,
+        openings: spec.openings,
+        supervisor_name: spec.supervisor_name,
+        supervisor_email: spec.supervisor_email,
+        status: 'PUBLISHED',
+        published_at: new Date(),
+        eligible_programmes: { create: programmeRows },
+        required_competencies: { create: competencyRows },
+      },
+      update: {
+        title: spec.title,
+        description: spec.description,
+        status: 'PUBLISHED',
+        eligible_programmes: { create: programmeRows },
+        required_competencies: { create: competencyRows },
+      },
+    });
+  }
 
   // Avoid unused-binding warning.
   void studentId;
