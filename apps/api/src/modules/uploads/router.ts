@@ -36,18 +36,15 @@ const EXTENSIONS: Record<string, string> = {
 };
 
 const PresignSchema = z.object({
-  filename: z
-    .string()
-    .min(1)
-    .max(200)
-    .regex(/^[A-Za-z0-9._\- ]+$/, 'filename has disallowed characters'),
   content_type: z.string().refine((v) => ALLOWED_CONTENT_TYPES.has(v), {
-    message: 'content_type must be application/pdf or DOCX',
+    message: 'content_type must be application/pdf',
   }),
-  byte_size: z.number().int().min(1).max(MAX_BYTES),
+  size_bytes: z.number().int().min(1).max(MAX_BYTES),
 });
 
-uploadsRouter.post('/cv/presign', requireRole('STUDENT'), async (req, res, next) => {
+const PRESIGN_TTL_SECONDS = 5 * 60;
+
+uploadsRouter.post('/cv', requireRole('STUDENT'), async (req, res, next) => {
   try {
     const body = PresignSchema.parse(req.body);
     const env = loadEnv();
@@ -58,7 +55,8 @@ uploadsRouter.post('/cv/presign', requireRole('STUDENT'), async (req, res, next)
     // Content-Type and Content-Length. For the pilot, the API itself
     // accepts the PUT at /api/v1/files/:key with the same constraints.
     const upload_url = `${env.PUBLIC_WEB_ORIGIN.replace(/\/$/, '')}/api/v1/files/${encodeURIComponent(storage_key)}`;
-    const read_url = signedUrl(storage_key);
+    const public_url = signedUrl(storage_key);
+    const expires_at = new Date(Date.now() + PRESIGN_TTL_SECONDS * 1000).toISOString();
 
     await writeAudit(req, {
       action: 'upload.cv.presign',
@@ -66,14 +64,7 @@ uploadsRouter.post('/cv/presign', requireRole('STUDENT'), async (req, res, next)
       resource_id: storage_key,
     });
 
-    res.status(200).json({
-      storage_key,
-      upload_url,
-      read_url,
-      max_bytes: MAX_BYTES,
-      content_type: body.content_type,
-      expires_in_seconds: 5 * 60,
-    });
+    res.status(200).json({ upload_url, public_url, expires_at });
   } catch (err) {
     next(err);
   }

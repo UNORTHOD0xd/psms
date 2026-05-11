@@ -28,10 +28,8 @@ const ApplySchema = z.object({
 type ApplyValues = z.infer<typeof ApplySchema>;
 
 interface PresignResponse {
-  put_url: string;
-  cv_url: string;
-  storage_key: string;
-  max_bytes: number;
+  upload_url: string;
+  public_url: string;
   expires_at: string;
 }
 
@@ -63,13 +61,13 @@ export function ApplyForm({ opportunityId }: { opportunityId: string }): JSX.Ele
     }
     try {
       setPhase('presigning');
-      const presign = await api.post<PresignResponse>('/uploads/cv/presign', {
+      const presign = await api.post<PresignResponse>('/uploads/cv', {
         content_type: file.type,
-        byte_size: file.size,
+        size_bytes: file.size,
       });
 
       setPhase('uploading');
-      const putRes = await fetch(presign.put_url, {
+      const putRes = await fetch(presign.upload_url, {
         method: 'PUT',
         body: file,
         headers: { 'Content-Type': file.type },
@@ -83,7 +81,7 @@ export function ApplyForm({ opportunityId }: { opportunityId: string }): JSX.Ele
       await api.post('/applications', {
         opportunity_id: opportunityId,
         motivation: values.motivation,
-        cv_url: presign.cv_url,
+        cv_url: presign.public_url,
       });
 
       void navigate({ to: '/student/applications' });

@@ -23,7 +23,7 @@ describe('uploads module', () => {
       });
 
     expect(res.status).toBe(200);
-    expect(res.body.put_url).toBeDefined();
+    expect(res.body.upload_url).toBeDefined();
     expect(res.body.public_url).toBeDefined();
   });
 

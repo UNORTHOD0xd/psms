@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useNavigate } from '@tanstack/react-router';
 import { z } from 'zod';
 
 import { Button, ErrorBanner, Field } from '../components/index.js';
@@ -16,6 +17,7 @@ type SignInValues = z.infer<typeof SignInSchema>;
 
 export function SignInRoute(): JSX.Element {
   const auth = useAuth();
+  const navigate = useNavigate();
   const [submitError, setSubmitError] = useState<unknown>(null);
   const {
     register,
@@ -28,6 +30,10 @@ export function SignInRoute(): JSX.Element {
     try {
       await api.post('/auth/sign-in', values);
       await auth.refresh();
+      // AuthGate only redirects anonymous → /sign-in; it doesn't push
+      // authenticated users off this page. Send them to the role-home
+      // redirector explicitly.
+      await navigate({ to: '/', replace: true });
     } catch (err) {
       if (err instanceof ProblemError && err.status === 401) {
         setSubmitError(new ProblemError({ ...err, detail: 'Email or password incorrect.' }));
