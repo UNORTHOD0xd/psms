@@ -605,7 +605,7 @@ model AuditLog {
   actor_role    Role?
   action        String   @db.VarChar(100)
   resource_type String   @db.VarChar(100)
-  resource_id   String?  @db.VarChar(64)
+  resource_id   String?  @db.VarChar(255)
   before        Json?
   after         Json?
   ip            String?  @db.VarChar(64)

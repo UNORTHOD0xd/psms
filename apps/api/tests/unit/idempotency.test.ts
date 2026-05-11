@@ -129,12 +129,16 @@ function makeRes(): FakeRes {
 }
 
 async function run(req: FakeReq, res: FakeRes): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    Promise.resolve(idempotency(req as never, res as never, (err?: unknown) => {
-      if (err) reject(err as Error);
-      else resolve();
-    })).catch(reject);
-  });
+  // The middleware either calls next() (pass-through) or sends a response
+  // and returns without next() (short-circuit). Awaiting the returned
+  // promise covers both paths.
+  let nextErr: unknown = null;
+  await Promise.resolve(
+    idempotency(req as never, res as never, (err?: unknown) => {
+      if (err) nextErr = err;
+    }),
+  );
+  if (nextErr) throw nextErr as Error;
 }
 
 function fireFinish(res: FakeRes): void {

@@ -31,7 +31,7 @@ const baseOpp = (overrides: Partial<OpportunityForMatching> = {}): OpportunityFo
   end_date: new Date('2026-08-31'), // ~13 weeks
   min_hours: 120,
   application_deadline: new Date('2026-05-25'),
-  published_at: new Date('2026-04-25'), // 7 days before NOW
+  published_at: new Date('2026-04-25T12:00:00Z'), // 7 days before NOW
   required_competencies: [
     { competency_code: 'PROG-WEB', weight: 1 },
     { competency_code: 'PROG-DB', weight: 1 },
