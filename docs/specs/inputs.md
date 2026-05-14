@@ -376,8 +376,10 @@ active placement.
 **Preconditions.**
 - The endpoint is rate-limited (`signInLimiter`,
   `apps/api/src/middleware/rate-limit.ts:9`):
-  `RATE_LIMIT_SIGNIN_PER_IP_PER_5MIN` attempts per IP per 5 minutes
-  (default 5).
+  `RATE_LIMIT_SIGNIN_PER_IP_PER_5MIN` *failed* attempts per
+  `(IP, email)` pair per 5 minutes (default 5). Successful sign-ins
+  do not consume the budget, and different accounts on the same IP
+  each have their own bucket.
 
 **Validation.** Body schema (`SignInSchema`,
 `apps/api/src/modules/auth/router.ts:34`):

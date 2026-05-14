@@ -5,12 +5,21 @@ import { Problems, sendProblem } from '../lib/problem.js';
 
 const env = () => loadEnv();
 
-// Sign-in: 5 attempts per IP per 5 minutes (CLAUDE.md INP-09 + auth router doc).
+// Sign-in: N failed attempts per IP+email per 5 minutes (INP-09).
+// Scoped by account so different roles signing in from the same IP don't
+// share a bucket, and successful sign-ins don't burn the budget.
 export const signInLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
   limit: () => env().RATE_LIMIT_SIGNIN_PER_IP_PER_5MIN,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => {
+    const ip = req.ip ?? 'unknown';
+    const raw = (req.body as { email?: unknown } | undefined)?.email;
+    const email = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+    return `${ip}|${email}`;
+  },
   handler: (_req, res) => sendProblem(res, Problems.tooMany('Too many sign-in attempts')),
 });
 
