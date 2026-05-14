@@ -237,13 +237,13 @@ export function OpportunityForm({ id }: { id?: string }): JSX.Element {
 
       <Field
         label="Required competencies (comma-separated codes)"
-        hint="e.g. ICT-DEV-001, ICT-NET-002"
+        hint="e.g. PROG-WEB, PROG-DB. Any code is accepted; new ones are created on save."
         error={errors.required_competencies?.message}
         {...register('required_competencies')}
       />
       <Field
         label="Eligible programmes (comma-separated codes; blank = all)"
-        hint="e.g. ICT-DIP, ICT-CERT"
+        hint="e.g. ICT-DIP, NET-CERT. Any code is accepted; new ones are created on save."
         error={errors.eligible_programmes?.message}
         {...register('eligible_programmes')}
       />

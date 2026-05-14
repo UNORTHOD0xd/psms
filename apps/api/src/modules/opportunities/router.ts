@@ -121,23 +121,31 @@ opportunitiesRouter.post('/', requireRole('COORDINATOR'), async (req, res, next)
       );
     }
 
+    // Unknown competency/programme codes are auto-provisioned with the
+    // code as a placeholder name — coordinators aren't constrained to the
+    // seeded reference list. An administrator can rename/curate later.
     const competencies = body.required_competencies.length
-      ? await prisma.competency.findMany({
-          where: { competency_code: { in: body.required_competencies } },
-        })
+      ? await Promise.all(
+          body.required_competencies.map((code) =>
+            prisma.competency.upsert({
+              where: { competency_code: code },
+              update: {},
+              create: { competency_code: code, name: code },
+            }),
+          ),
+        )
       : [];
     const programmes = body.eligible_programmes.length
-      ? await prisma.programme.findMany({
-          where: { programme_code: { in: body.eligible_programmes } },
-        })
+      ? await Promise.all(
+          body.eligible_programmes.map((code) =>
+            prisma.programme.upsert({
+              where: { programme_code: code },
+              update: {},
+              create: { programme_code: code, name: code, hours_required: 0 },
+            }),
+          ),
+        )
       : [];
-
-    if (competencies.length !== body.required_competencies.length) {
-      return sendProblem(res, Problems.badRequest('Unknown competency_code(s)'));
-    }
-    if (programmes.length !== body.eligible_programmes.length) {
-      return sendProblem(res, Problems.badRequest('Unknown programme_code(s)'));
-    }
 
     const created = await prisma.opportunity.create({
       data: {
@@ -213,25 +221,76 @@ opportunitiesRouter.patch('/:opportunity_id', requireRole('COORDINATOR'), async 
       start_date,
       end_date,
       application_deadline,
-      required_competencies: _rc,
-      eligible_programmes: _ep,
+      required_competencies,
+      eligible_programmes,
       ...rest
     } = body;
-    const updated = await prisma.opportunity.update({
-      where: { opportunity_id: id },
-      data: {
-        ...rest,
-        ...(start_date ? { start_date: new Date(start_date) } : {}),
-        ...(end_date ? { end_date: new Date(end_date) } : {}),
-        ...(application_deadline ? { application_deadline: new Date(application_deadline) } : {}),
-        ...(stipend_jmd !== undefined
-          ? {
-              stipend_amount: stipend_jmd,
-              stipend_currency: stipend_jmd ? 'JMD' : null,
-            }
-          : {}),
-      },
-      include: OPPORTUNITY_INCLUDE,
+
+    const competencies =
+      required_competencies !== undefined
+        ? await Promise.all(
+            required_competencies.map((code) =>
+              prisma.competency.upsert({
+                where: { competency_code: code },
+                update: {},
+                create: { competency_code: code, name: code },
+              }),
+            ),
+          )
+        : undefined;
+    const programmes =
+      eligible_programmes !== undefined
+        ? await Promise.all(
+            eligible_programmes.map((code) =>
+              prisma.programme.upsert({
+                where: { programme_code: code },
+                update: {},
+                create: { programme_code: code, name: code, hours_required: 0 },
+              }),
+            ),
+          )
+        : undefined;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      if (competencies !== undefined) {
+        await tx.opportunityCompetency.deleteMany({ where: { opportunity_id: id } });
+        if (competencies.length) {
+          await tx.opportunityCompetency.createMany({
+            data: competencies.map((c) => ({
+              opportunity_id: id,
+              competency_id: c.competency_id,
+              weight: 1,
+            })),
+          });
+        }
+      }
+      if (programmes !== undefined) {
+        await tx.opportunityProgramme.deleteMany({ where: { opportunity_id: id } });
+        if (programmes.length) {
+          await tx.opportunityProgramme.createMany({
+            data: programmes.map((p) => ({
+              opportunity_id: id,
+              programme_id: p.programme_id,
+            })),
+          });
+        }
+      }
+      return tx.opportunity.update({
+        where: { opportunity_id: id },
+        data: {
+          ...rest,
+          ...(start_date ? { start_date: new Date(start_date) } : {}),
+          ...(end_date ? { end_date: new Date(end_date) } : {}),
+          ...(application_deadline ? { application_deadline: new Date(application_deadline) } : {}),
+          ...(stipend_jmd !== undefined
+            ? {
+                stipend_amount: stipend_jmd,
+                stipend_currency: stipend_jmd ? 'JMD' : null,
+              }
+            : {}),
+        },
+        include: OPPORTUNITY_INCLUDE,
+      });
     });
 
     await writeAudit(req, {
